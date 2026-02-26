@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls 2.15
 
 Window {
-    width: 640
-    height: 360
+    width: 1280
+    height: 700
     minimumWidth: 360
     minimumHeight: 180
     visible: true

@@ -5,7 +5,7 @@ project(ZQTPlayer VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Quick)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Quick QuickControls2 LinguistTools)
 
 qt_standard_project_setup()
 
@@ -15,6 +15,12 @@ qt_add_executable(ZQTPlayer
     pages/HomeController.h
     pages/SettingsController.cpp
     pages/SettingsController.h
+    pages/StyleManager.cpp
+    pages/StyleManager.h
+    pages/LanguageManager.cpp
+    pages/LanguageManager.h
+    pages/ThemeManager.cpp
+    pages/ThemeManager.h
 )
 
 qt_add_qml_module(ZQTPlayer
@@ -29,6 +35,12 @@ qt_add_qml_module(ZQTPlayer
         pages/HomeController.cpp
         pages/SettingsController.h
         pages/SettingsController.cpp
+        pages/StyleManager.h
+        pages/StyleManager.cpp
+        pages/LanguageManager.h
+        pages/LanguageManager.cpp
+        pages/ThemeManager.h
+        pages/ThemeManager.cpp
 )
 
 set_target_properties(ZQTPlayer PROPERTIES
@@ -37,9 +49,16 @@ set_target_properties(ZQTPlayer PROPERTIES
 )
 
 target_link_libraries(ZQTPlayer
-    PRIVATE Qt6::Quick
+    PRIVATE Qt6::Quick Qt6::QuickControls2
 )
 
 target_include_directories(ZQTPlayer
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/pages
+)
+
+# Compile .ts → .qm and embed as Qt resources (accessible via :/i18n/)
+qt_add_translations(ZQTPlayer
+    TS_FILES
+        i18n/app_en_US.ts
+        i18n/app_zh_CN.ts
 )

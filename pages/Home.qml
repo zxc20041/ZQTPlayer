@@ -4,8 +4,8 @@ import ZQTPlayer 1.0
 
 ApplicationWindow {
     id: root
-    width: 640
-    height: 360
+    width: 1280
+    height: 700
     minimumWidth: 360
     minimumHeight: 180
     visible: true
@@ -28,13 +28,13 @@ ApplicationWindow {
                 anchors.centerIn: parent
                 spacing: 12
 
-                Text {
+                Label {
                     text: controller.title
                     font.pointSize: 18
                 }
 
                 Button {
-                    text: qsTr("Go to Settings")
+                    text: qsTr("Settings")
                     onClicked: stack.push(settingsPage)
                 }
             }
