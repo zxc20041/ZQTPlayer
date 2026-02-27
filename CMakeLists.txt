@@ -7,16 +7,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 6.2 REQUIRED COMPONENTS Quick QuickControls2 LinguistTools)
 
-# ── FFmpeg (BtbN lgpl-shared build) ──
-set(FFMPEG_ROOT "C:/ffmpeg/ffmpeg-master-latest-win64-lgpl-shared")
-find_library(AVFORMAT_LIBRARY  avformat  PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
-find_library(AVCODEC_LIBRARY   avcodec   PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
-find_library(AVUTIL_LIBRARY    avutil    PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
-find_library(SWSCALE_LIBRARY   swscale   PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
-find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
+# ── FFmpeg ──
+if(WIN32)
+    # Windows: BtbN lgpl-shared pre-built binaries
+    set(FFMPEG_ROOT "C:/ffmpeg/ffmpeg-master-latest-win64-lgpl-shared")
+    find_library(AVFORMAT_LIBRARY   avformat   PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
+    find_library(AVCODEC_LIBRARY    avcodec    PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
+    find_library(AVUTIL_LIBRARY     avutil     PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
+    find_library(SWSCALE_LIBRARY    swscale    PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
+    find_library(SWRESAMPLE_LIBRARY swresample PATHS ${FFMPEG_ROOT}/lib NO_DEFAULT_PATH)
+    set(FFMPEG_INCLUDE_DIRS ${FFMPEG_ROOT}/include)
+    set(FFMPEG_LIBRARIES ${AVFORMAT_LIBRARY} ${AVCODEC_LIBRARY} ${AVUTIL_LIBRARY}
+                         ${SWSCALE_LIBRARY} ${SWRESAMPLE_LIBRARY})
+else()
+    # Linux: use system-installed FFmpeg via pkg-config
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FFMPEG REQUIRED
+        libavformat libavcodec libavutil libswscale libswresample)
+endif()
 
-if(NOT AVFORMAT_LIBRARY OR NOT AVCODEC_LIBRARY OR NOT AVUTIL_LIBRARY)
-    message(FATAL_ERROR "FFmpeg libraries not found in ${FFMPEG_ROOT}/lib")
+if(NOT FFMPEG_LIBRARIES)
+    message(FATAL_ERROR "FFmpeg libraries not found")
 endif()
 
 qt_standard_project_setup()
@@ -79,18 +90,14 @@ target_link_libraries(ZQTPlayer
     PRIVATE
         Qt6::Quick
         Qt6::QuickControls2
-        ${AVFORMAT_LIBRARY}
-        ${AVCODEC_LIBRARY}
-        ${AVUTIL_LIBRARY}
-        ${SWSCALE_LIBRARY}
-        ${SWRESAMPLE_LIBRARY}
+        ${FFMPEG_LIBRARIES}
 )
 
 target_include_directories(ZQTPlayer
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/pages
         ${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer
-        ${FFMPEG_ROOT}/include
+        ${FFMPEG_INCLUDE_DIRS}
 )
 
 # Compile .ts → .qm and embed as Qt resources (accessible via :/i18n/)

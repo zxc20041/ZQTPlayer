@@ -12,7 +12,8 @@
           "-B", "${workspaceFolder}/build/vscode-Debug",
           "-DCMAKE_BUILD_TYPE=Debug",
           "-DCMAKE_PREFIX_PATH=/home/zxc/Qt/6.10.2/gcc_64",
-          "-DQt6_DIR=/home/zxc/Qt/6.10.2/gcc_64/lib/cmake/Qt6"
+          "-DQt6_DIR=/home/zxc/Qt/6.10.2/gcc_64/lib/cmake/Qt6",
+          "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
         ]
       },
       "windows": {
@@ -27,6 +28,7 @@
           "-B", "${workspaceFolder}/build/vscode-Debug",
           "-G", "MinGW Makefiles",
           "-DCMAKE_BUILD_TYPE=Debug",
+          "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
           "-DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/mingw_64",
           "-DQt6_DIR=C:/Qt/6.10.2/mingw_64/lib/cmake/Qt6",
           "-DCMAKE_MAKE_PROGRAM=C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe",
@@ -74,7 +76,8 @@
           "-B", "${workspaceFolder}/build/vscode-Release",
           "-DCMAKE_BUILD_TYPE=Release",
           "-DCMAKE_PREFIX_PATH=/home/zxc/Qt/6.10.2/gcc_64",
-          "-DQt6_DIR=/home/zxc/Qt/6.10.2/gcc_64/lib/cmake/Qt6"
+          "-DQt6_DIR=/home/zxc/Qt/6.10.2/gcc_64/lib/cmake/Qt6",
+          "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
         ]
       },
       "windows": {

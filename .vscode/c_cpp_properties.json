@@ -5,7 +5,8 @@
             "configurationProvider": "ms-vscode.cmake-tools",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/home/zxc/Qt/6.10.2/gcc_64/include/**"
+                "/home/zxc/Qt/6.10.2/gcc_64/include/**",
+                "/usr/include/x86_64-linux-gnu/**"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/g++",

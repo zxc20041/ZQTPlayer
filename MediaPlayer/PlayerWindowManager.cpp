@@ -1,5 +1,6 @@
 #include "PlayerWindowManager.h"
 #include <QFileInfo>
+#include <QUrl>
 #include <QDebug>
 
 PlayerWindowManager::PlayerWindowManager(QObject *parent)
@@ -25,10 +26,10 @@ void PlayerWindowManager::setDropEnabled(bool enabled)
 
 bool PlayerWindowManager::openMedia(const QString &path)
 {
-    // Normalise: QML's drop gives "file:///C:/..." – strip scheme
-    QString localPath = path;
-    if (localPath.startsWith("file:///")) {
-        localPath = localPath.mid(8); // "C:/..."
+    // Normalise: QML's drop gives "file:///..." – use QUrl for cross-platform conversion
+    QString localPath = QUrl(path).toLocalFile();
+    if (localPath.isEmpty()) {
+        localPath = path;  // fallback: already a plain path
     }
 
     QFileInfo fi(localPath);
