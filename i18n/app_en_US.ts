@@ -25,6 +25,18 @@
             <source>Settings</source>
             <translation>Settings</translation>
         </message>
+        <message>
+            <source>Drag a media file here to open</source>
+            <translation>Drag a media file here to open</translation>
+        </message>
+        <message>
+            <source>Media Info</source>
+            <translation>Media Info</translation>
+        </message>
+        <message>
+            <source>Drop to open</source>
+            <translation>Drop to open</translation>
+        </message>
     </context>
     <context>
         <name>Settings</name>
@@ -71,6 +83,57 @@
         <message>
             <source>Display Language</source>
             <translation>Display Language</translation>
+        </message>
+    </context>
+    <context>
+        <name>MediaInfoDialog</name>
+        <message>
+            <source>Media Info</source>
+            <translation>Media Info</translation>
+        </message>
+        <message>
+            <source>File</source>
+            <translation>File</translation>
+        </message>
+        <message>
+            <source>Path</source>
+            <translation>Path</translation>
+        </message>
+        <message>
+            <source>Video</source>
+            <translation>Video</translation>
+        </message>
+        <message>
+            <source>Resolution</source>
+            <translation>Resolution</translation>
+        </message>
+        <message>
+            <source>Duration</source>
+            <translation>Duration</translation>
+        </message>
+        <message>
+            <source>Codec</source>
+            <translation>Codec</translation>
+        </message>
+        <message>
+            <source>Frame Rate</source>
+            <translation>Frame Rate</translation>
+        </message>
+        <message>
+            <source>Bit Rate</source>
+            <translation>Bit Rate</translation>
+        </message>
+        <message>
+            <source>Audio</source>
+            <translation>Audio</translation>
+        </message>
+        <message>
+            <source>Sample Rate</source>
+            <translation>Sample Rate</translation>
+        </message>
+        <message>
+            <source>Channels</source>
+            <translation>Channels</translation>
         </message>
     </context>
 </TS>

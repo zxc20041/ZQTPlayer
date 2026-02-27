@@ -18,7 +18,8 @@
             "configurationProvider": "ms-vscode.cmake-tools",
             "includePath": [
                 "${workspaceFolder}/**",
-                "C:\\Qt\\6.10.2\\mingw_64\\include\\**"
+                "C:\\Qt\\6.10.2\\mingw_64\\include\\**",
+                "C:\\ffmpeg\\ffmpeg-master-latest-win64-lgpl-shared\\include\\**"
             ],
             "defines": [
                 "_DEBUG",

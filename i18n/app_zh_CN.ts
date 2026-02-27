@@ -25,6 +25,18 @@
             <source>Settings</source>
             <translation>设置</translation>
         </message>
+        <message>
+            <source>Drag a media file here to open</source>
+            <translation>拖入媒体文件以打开</translation>
+        </message>
+        <message>
+            <source>Media Info</source>
+            <translation>媒体信息</translation>
+        </message>
+        <message>
+            <source>Drop to open</source>
+            <translation>释放以打开</translation>
+        </message>
     </context>
     <context>
         <name>Settings</name>
@@ -71,6 +83,57 @@
         <message>
             <source>Display Language</source>
             <translation>显示语言</translation>
+        </message>
+    </context>
+    <context>
+        <name>MediaInfoDialog</name>
+        <message>
+            <source>Media Info</source>
+            <translation>媒体信息</translation>
+        </message>
+        <message>
+            <source>File</source>
+            <translation>文件</translation>
+        </message>
+        <message>
+            <source>Path</source>
+            <translation>路径</translation>
+        </message>
+        <message>
+            <source>Video</source>
+            <translation>视频</translation>
+        </message>
+        <message>
+            <source>Resolution</source>
+            <translation>分辨率</translation>
+        </message>
+        <message>
+            <source>Duration</source>
+            <translation>时长</translation>
+        </message>
+        <message>
+            <source>Codec</source>
+            <translation>编解码器</translation>
+        </message>
+        <message>
+            <source>Frame Rate</source>
+            <translation>帧率</translation>
+        </message>
+        <message>
+            <source>Bit Rate</source>
+            <translation>码率</translation>
+        </message>
+        <message>
+            <source>Audio</source>
+            <translation>音频</translation>
+        </message>
+        <message>
+            <source>Sample Rate</source>
+            <translation>采样率</translation>
+        </message>
+        <message>
+            <source>Channels</source>
+            <translation>声道数</translation>
         </message>
     </context>
 </TS>
