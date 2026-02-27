@@ -1,0 +1,94 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CMake: configure (Debug)",
+      "type": "shell",
+      "command": "C:/Qt/Tools/CMake_64/bin/cmake.exe",
+      "options": {
+        "env": {
+          "Path": "C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
+        }
+      },
+      "args": [
+        "-S",
+        "${workspaceFolder}",
+        "-B",
+        "${workspaceFolder}/build/vscode-Debug",
+        "-G",
+        "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=Debug",
+        "-DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/mingw_64",
+        "-DQt6_DIR=C:/Qt/6.10.2/mingw_64/lib/cmake/Qt6",
+        "-DCMAKE_MAKE_PROGRAM=C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe",
+        "-DCMAKE_C_COMPILER=C:/Qt/Tools/mingw1310_64/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=C:/Qt/Tools/mingw1310_64/bin/g++.exe"
+      ],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      "label": "CMake: build (Debug)",
+      "type": "shell",
+      "command": "C:/Qt/Tools/CMake_64/bin/cmake.exe",
+      "options": {
+        "env": {
+          "Path": "C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
+        }
+      },
+      "args": [
+        "--build",
+        "${workspaceFolder}/build/vscode-Debug"
+      ],
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "dependsOn": ["CMake: configure (Debug)"]
+    },
+    {
+      "label": "CMake: configure (Release)",
+      "type": "shell",
+      "command": "C:/Qt/Tools/CMake_64/bin/cmake.exe",
+      "options": {
+        "env": {
+          "Path": "C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
+        }
+      },
+      "args": [
+        "-S",
+        "${workspaceFolder}",
+        "-B",
+        "${workspaceFolder}/build/vscode-Release",
+        "-G",
+        "MinGW Makefiles",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_PREFIX_PATH=C:/Qt/6.10.2/mingw_64",
+        "-DQt6_DIR=C:/Qt/6.10.2/mingw_64/lib/cmake/Qt6",
+        "-DCMAKE_MAKE_PROGRAM=C:/Qt/Tools/mingw1310_64/bin/mingw32-make.exe",
+        "-DCMAKE_C_COMPILER=C:/Qt/Tools/mingw1310_64/bin/gcc.exe",
+        "-DCMAKE_CXX_COMPILER=C:/Qt/Tools/mingw1310_64/bin/g++.exe"
+      ],
+      "problemMatcher": ["$gcc"],
+      "group": "build"
+    },
+    {
+      "label": "CMake: build (Release)",
+      "type": "shell",
+      "command": "C:/Qt/Tools/CMake_64/bin/cmake.exe",
+      "options": {
+        "env": {
+          "Path": "C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
+        }
+      },
+      "args": [
+        "--build",
+        "${workspaceFolder}/build/vscode-Release"
+      ],
+      "problemMatcher": ["$gcc"],
+      "group": "build",
+      "dependsOn": ["CMake: configure (Release)"]
+    }
+  ]
+}
