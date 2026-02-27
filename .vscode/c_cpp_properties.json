@@ -1,6 +1,19 @@
 {
     "configurations": [
         {
+            "name": "Linux",
+            "configurationProvider": "ms-vscode.cmake-tools",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/zxc/Qt/6.10.2/gcc_64/include/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        },
+        {
             "name": "Win32",
             "configurationProvider": "ms-vscode.cmake-tools",
             "includePath": [

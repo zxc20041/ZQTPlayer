@@ -1,15 +1,8 @@
 {
-  "cmake.configureOnOpen": true,
-  "cmake.cmakePath": "C:/Qt/Tools/CMake_64/bin/cmake.exe",
-  "cmake.configureEnvironment": {
-    "Path": "C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
-  },
-  "cmake.buildEnvironment": {
-    "Path": "C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
-  },
-  "cmake.configureSettings": {
-    "CMAKE_PREFIX_PATH": "C:/Qt/6.10.2/mingw_64",
-    "Qt6_DIR": "C:/Qt/6.10.2/mingw_64/lib/cmake/Qt6"
-  },
-  "cmake.buildDirectory": "${workspaceFolder}/build/vscode-${buildType}"
+  "cmake.configureOnOpen": false,
+  "cmake.buildDirectory": "${workspaceFolder}/build/vscode-${buildType}",
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "chat.tools.terminal.autoApprove": {
+    "/home/zxc/Qt/Tools/CMake/bin/cmake": true
+  }
 }

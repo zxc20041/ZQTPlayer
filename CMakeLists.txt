@@ -9,6 +9,12 @@ find_package(Qt6 6.2 REQUIRED COMPONENTS Quick QuickControls2 LinguistTools)
 
 qt_standard_project_setup()
 
+# Use ':/qt/qml/' as the default resource prefix so the engine can discover QML modules
+qt_policy(SET QTP0001 NEW)
+
+# Avoid clash between QML module dir "ZQTPlayer/" and the executable on Linux
+set(QT_QML_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/qml)
+
 qt_add_executable(ZQTPlayer
     main.cpp
     pages/HomeController.cpp

@@ -5,20 +5,86 @@
       "name": "Debug ZQTPlayer",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/build/vscode-Debug/ZQTPlayer.exe",
       "args": [],
       "cwd": "${workspaceFolder}",
-      "environment": [
-        {
-          "name": "Path",
-          "value": "C:/Qt/6.10.2/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
-        }
-      ],
       "externalConsole": false,
       "MIMode": "gdb",
-      "miDebuggerPath": "C:/Qt/Tools/mingw1310_64/bin/gdb.exe",
       "preLaunchTask": "CMake: build (Debug)",
-      "visualizerFile": "c:\\Users\\zxc\\AppData\\Roaming\\Code\\User\\workspaceStorage\\55ff0febb1a66784f4777492c43388cd\\tonka3000.qtvsctools\\qt.natvis.xml"
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Disable debuginfod to avoid slow symbol downloads",
+          "text": "set debuginfod enabled off",
+          "ignoreFailures": true
+        }
+      ],
+      "linux": {
+        "program": "${workspaceFolder}/build/vscode-Debug/ZQTPlayer",
+        "miDebuggerPath": "/usr/bin/gdb",
+        "environment": [
+          {
+            "name": "DEBUGINFOD_URLS",
+            "value": ""
+          }
+        ]
+      },
+      "windows": {
+        "program": "${workspaceFolder}/build/vscode-Debug/ZQTPlayer.exe",
+        "miDebuggerPath": "C:/Qt/Tools/mingw1310_64/bin/gdb.exe",
+        "environment": [
+          {
+            "name": "Path",
+            "value": "C:/Qt/6.10.2/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
+          }
+        ]
+      },
+      "visualizerFile": "/home/zxc/.config/Code/User/workspaceStorage/a5e04d3a0af9188ef5bb65cb816259de/tonka3000.qtvsctools/qt.natvis.xml"
+    },
+    {
+      "name": "Debug ZQTPlayer (no build)",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Disable debuginfod to avoid slow symbol downloads",
+          "text": "set debuginfod enabled off",
+          "ignoreFailures": true
+        }
+      ],
+      "linux": {
+        "program": "${workspaceFolder}/build/vscode-Debug/ZQTPlayer",
+        "miDebuggerPath": "/usr/bin/gdb",
+        "environment": [
+          {
+            "name": "DEBUGINFOD_URLS",
+            "value": ""
+          }
+        ]
+      },
+      "windows": {
+        "program": "${workspaceFolder}/build/vscode-Debug/ZQTPlayer.exe",
+        "miDebuggerPath": "C:/Qt/Tools/mingw1310_64/bin/gdb.exe",
+        "environment": [
+          {
+            "name": "Path",
+            "value": "C:/Qt/6.10.2/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
+          }
+        ]
+      },
+      "visualizerFile": "/home/zxc/.config/Code/User/workspaceStorage/a5e04d3a0af9188ef5bb65cb816259de/tonka3000.qtvsctools/qt.natvis.xml"
     }
   ]
 }
