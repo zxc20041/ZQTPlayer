@@ -3,7 +3,6 @@
 #include <QObject>
 #include <QString>
 #include <QSize>
-#include <memory>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -20,15 +19,6 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/avutil.h>
 }
-
-/// @brief Custom deleter for AVFormatContext (avformat_close_input needs a **)
-struct AVFormatContextDeleter {
-    void operator()(AVFormatContext *ctx) const {
-        if (ctx) {
-            avformat_close_input(&ctx);
-        }
-    }
-};
 
 /// @brief Manages FFmpeg demuxing + codec context + decode threads for a single
 ///        media file.  NOT a QML_ELEMENT — used internally by PlayerWindowManager.
@@ -127,7 +117,7 @@ private:
 
     // ── Members: file / codec ──
     QString m_filePath;
-    std::unique_ptr<AVFormatContext, AVFormatContextDeleter> m_formatCtx;
+    AVFormatContext *m_formatCtx = nullptr;
     AVCodecContext *m_videoCodecCtx = nullptr;
     AVCodecContext *m_audioCodecCtx = nullptr;
     int m_videoStreamIdx = -1;
@@ -145,6 +135,7 @@ private:
     // ── Members: state ──
     std::atomic<AVPlayerStatus> m_status{AVPlayerStatus::Stopped};
     std::atomic<bool> m_abortRequested{false};
+    std::atomic<int>  m_activeDecodeThreads{0}; ///< counts running decode threads
 
     // ── Members: frame handler ──
     FrameHandler *m_frameHandler = nullptr;

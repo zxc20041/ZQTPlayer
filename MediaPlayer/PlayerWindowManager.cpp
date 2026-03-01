@@ -204,10 +204,10 @@ void PlayerWindowManager::onPositionTimer()
         emit positionChanged();
     }
 
-    // Detect playback end: demux reached EOF and audio output has drained
+    // Detect playback end: all decode threads have finished draining
     AVPlayerStatus st = m_codec.status();
-    if (st == AVPlayerStatus::EndOfFile) {
-        // Give a brief moment for final frames, then signal completion
+    if (st == AVPlayerStatus::PlaybackDone) {
+        qDebug() << "PlayerWindowManager: playback done, stopping";
         m_positionTimer.stop();
         m_codec.stop();
         m_position = 0.0;

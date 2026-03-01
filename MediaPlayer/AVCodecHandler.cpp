@@ -47,23 +47,23 @@ bool AVCodecHandler::open()
         qWarning() << "avformat_open_input failed:" << err;
         return false;
     }
-    m_formatCtx.reset(rawCtx);
+    m_formatCtx = rawCtx;
 
     // Limit stream analysis to reduce UI freeze on main thread
     m_formatCtx->probesize       = 1000000;   // 1 MB max probe data
     m_formatCtx->max_analyze_duration = 500000; // 0.5 s max analysis
 
     // Read stream info
-    if (avformat_find_stream_info(m_formatCtx.get(), nullptr) < 0) {
+    if (avformat_find_stream_info(m_formatCtx, nullptr) < 0) {
         qWarning() << "avformat_find_stream_info failed";
         close();
         return false;
     }
 
     // Find best video & audio streams
-    m_videoStreamIdx = av_find_best_stream(m_formatCtx.get(), AVMEDIA_TYPE_VIDEO,
+    m_videoStreamIdx = av_find_best_stream(m_formatCtx, AVMEDIA_TYPE_VIDEO,
                                             -1, -1, nullptr, 0);
-    m_audioStreamIdx = av_find_best_stream(m_formatCtx.get(), AVMEDIA_TYPE_AUDIO,
+    m_audioStreamIdx = av_find_best_stream(m_formatCtx, AVMEDIA_TYPE_AUDIO,
                                             -1, -1, nullptr, 0);
 
     // Open video codec
@@ -99,7 +99,10 @@ void AVCodecHandler::close()
         avcodec_free_context(&m_audioCodecCtx);
         m_audioCodecCtx = nullptr;
     }
-    m_formatCtx.reset();
+    if (m_formatCtx) {
+        avformat_close_input(&m_formatCtx);
+        m_formatCtx = nullptr;
+    }
     m_videoStreamIdx = -1;
     m_audioStreamIdx = -1;
 }
@@ -185,7 +188,7 @@ int AVCodecHandler::audioChannels() const
 
 AVFormatContext *AVCodecHandler::formatContext() const
 {
-    return m_formatCtx.get();
+    return m_formatCtx;
 }
 
 AVCodecContext *AVCodecHandler::videoCodecContext() const
@@ -220,11 +223,12 @@ void AVCodecHandler::play()
 
     m_abortRequested = false;
     m_paused = false;
+    m_activeDecodeThreads = 0;
     m_videoQueue.restart();
     m_audioQueue.restart();
 
     // If the container was previously read to EOF, seek back to the beginning
-    av_seek_frame(m_formatCtx.get(), -1, 0, AVSEEK_FLAG_BACKWARD);
+    av_seek_frame(m_formatCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
     if (m_videoCodecCtx) avcodec_flush_buffers(m_videoCodecCtx);
     if (m_audioCodecCtx) avcodec_flush_buffers(m_audioCodecCtx);
 
@@ -348,7 +352,7 @@ void AVCodecHandler::demuxLoop()
         waitIfPaused();
         if (m_abortRequested) break;
 
-        int ret = av_read_frame(m_formatCtx.get(), pkt);
+        int ret = av_read_frame(m_formatCtx, pkt);
         if (ret < 0) {
             // EOF or error — signal decoders that no more packets are coming
             m_status = AVPlayerStatus::EndOfFile;
@@ -365,18 +369,21 @@ void AVCodecHandler::demuxLoop()
 
     av_packet_free(&pkt);
 
-    qDebug() << "AVCodecHandler::demuxLoop – exiting";
+    qDebug() << "AVCodecHandler::demuxLoop – exiting, signalling EOF to queues";
 
-    // Tell decode threads there is nothing more to consume
-    m_videoQueue.abort();
-    m_audioQueue.abort();
+    // Signal decode threads that no more packets are coming.
+    // Use signalEOF() instead of abort() so they can drain the remaining
+    // packets before exiting.
+    m_videoQueue.signalEOF();
+    m_audioQueue.signalEOF();
 }
 
 void AVCodecHandler::videoDecodeLoop()
 {
+    m_activeDecodeThreads.fetch_add(1);
     AVPacket *pkt = nullptr;
     AVFrame  *frame = av_frame_alloc();
-    if (!frame) return;
+    if (!frame) { m_activeDecodeThreads.fetch_sub(1); return; }
 
     while (!m_abortRequested) {
         waitIfPaused();
@@ -439,13 +446,20 @@ void AVCodecHandler::videoDecodeLoop()
 
     qDebug() << "AVCodecHandler::videoDecodeLoop – exiting";
     av_frame_free(&frame);
+    if (m_activeDecodeThreads.fetch_sub(1) == 1) {
+        // Last decode thread to finish → signal PlaybackDone
+        AVPlayerStatus expected = AVPlayerStatus::EndOfFile;
+        m_status.compare_exchange_strong(expected, AVPlayerStatus::PlaybackDone);
+        qDebug() << "AVCodecHandler: all decode threads done → PlaybackDone";
+    }
 }
 
 void AVCodecHandler::audioDecodeLoop()
 {
+    m_activeDecodeThreads.fetch_add(1);
     AVPacket *pkt = nullptr;
     AVFrame  *frame = av_frame_alloc();
-    if (!frame) return;
+    if (!frame) { m_activeDecodeThreads.fetch_sub(1); return; }
 
     while (!m_abortRequested) {
         waitIfPaused();
@@ -481,6 +495,12 @@ void AVCodecHandler::audioDecodeLoop()
 
     qDebug() << "AVCodecHandler::audioDecodeLoop – exiting";
     av_frame_free(&frame);
+    if (m_activeDecodeThreads.fetch_sub(1) == 1) {
+        // Last decode thread to finish → signal PlaybackDone
+        AVPlayerStatus expected = AVPlayerStatus::EndOfFile;
+        m_status.compare_exchange_strong(expected, AVPlayerStatus::PlaybackDone);
+        qDebug() << "AVCodecHandler: all decode threads done → PlaybackDone";
+    }
 }
 
 // ── Frame handler ──────────────────────────────────────────

@@ -24,9 +24,9 @@ bool PacketQueue::push(AVPacket *pkt)
 bool PacketQueue::pop(AVPacket **out)
 {
     std::unique_lock lock(m_mutex);
-    // Block until a packet is available or we are told to abort
-    m_condPop.wait(lock, [this] { return m_aborted || !m_queue.empty(); });
-    if (m_aborted && m_queue.empty()) return false;
+    // Block until a packet is available, aborted, or EOF with empty queue
+    m_condPop.wait(lock, [this] { return m_aborted || !m_queue.empty() || m_eof; });
+    if (m_queue.empty()) return false;   // aborted or EOF-drained
 
     *out = m_queue.front();
     m_queue.pop();
@@ -54,10 +54,18 @@ void PacketQueue::abort()
     m_condPop.notify_all();
 }
 
+void PacketQueue::signalEOF()
+{
+    std::lock_guard lock(m_mutex);
+    m_eof = true;
+    m_condPop.notify_all();   // wake consumers so they see EOF once drained
+}
+
 void PacketQueue::restart()
 {
     std::lock_guard lock(m_mutex);
     m_aborted = false;
+    m_eof     = false;
 }
 
 void PacketQueue::setMaxSize(size_t maxSize)

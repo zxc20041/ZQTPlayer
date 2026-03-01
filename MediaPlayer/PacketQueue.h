@@ -36,7 +36,12 @@ public:
     /// Wake all blocked threads so they can exit.
     void abort();
 
-    /// Reset the aborted flag so the queue can be reused after a seek/stop.
+    /// Signal that no more packets will be pushed. Consumers can still
+    /// drain remaining items; pop() returns false only once the queue
+    /// is empty AND EOF has been signalled.
+    void signalEOF();
+
+    /// Reset the aborted/EOF flags so the queue can be reused after a seek/stop.
     void restart();
 
     /// Change the maximum capacity. Takes effect immediately.
@@ -52,4 +57,5 @@ private:
     std::queue<AVPacket *>    m_queue;
     size_t                    m_maxSize;
     bool                      m_aborted = false;
+    bool                      m_eof     = false;   ///< no more pushes coming
 };

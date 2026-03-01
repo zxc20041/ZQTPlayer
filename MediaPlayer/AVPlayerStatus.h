@@ -8,7 +8,8 @@ enum class AVPlayerStatus : uint8_t {
     Loading,        ///< File opened, threads being created
     Playing,        ///< Active playback
     Paused,         ///< Playback paused, threads alive but waiting
-    EndOfFile,      ///< Demux reached EOF, decode may still be draining
+    EndOfFile,      ///< Demux reached EOF, decode threads still draining
+    PlaybackDone,   ///< All decode threads finished, ready to stop
 };
 
 /// @brief Video rendering backend selection.
