@@ -39,10 +39,14 @@
           {
             "name": "Path",
             "value": "C:/Qt/6.10.2/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;C:/ffmpeg/ffmpeg-master-latest-win64-lgpl-shared/bin;${env:Path}"
+          },
+          {
+            "name": "QT_ASSUME_STDERR_HAS_CONSOLE",
+            "value": "1"
           }
         ]
       },
-      "visualizerFile": "/home/zxc/.config/Code/User/workspaceStorage/a5e04d3a0af9188ef5bb65cb816259de/tonka3000.qtvsctools/qt.natvis.xml"
+      "visualizerFile": "c:\\Users\\zxc\\AppData\\Roaming\\Code\\User\\workspaceStorage\\55ff0febb1a66784f4777492c43388cd\\tonka3000.qtvsctools\\qt.natvis.xml"
     },
     {
       "name": "Debug ZQTPlayer (no build)",
@@ -81,10 +85,14 @@
           {
             "name": "Path",
             "value": "C:/Qt/6.10.2/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;C:/ffmpeg/ffmpeg-master-latest-win64-lgpl-shared/bin;${env:Path}"
+          },
+          {
+            "name": "QT_ASSUME_STDERR_HAS_CONSOLE",
+            "value": "1"
           }
         ]
       },
-      "visualizerFile": "/home/zxc/.config/Code/User/workspaceStorage/a5e04d3a0af9188ef5bb65cb816259de/tonka3000.qtvsctools/qt.natvis.xml"
+      "visualizerFile": "c:\\Users\\zxc\\AppData\\Roaming\\Code\\User\\workspaceStorage\\55ff0febb1a66784f4777492c43388cd\\tonka3000.qtvsctools\\qt.natvis.xml"
     }
   ]
 }

@@ -5,7 +5,7 @@ project(ZQTPlayer VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.2 REQUIRED COMPONENTS Quick QuickControls2 LinguistTools)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Quick QuickControls2 LinguistTools Multimedia)
 
 # ── FFmpeg ──
 if(WIN32)
@@ -52,8 +52,14 @@ qt_add_executable(ZQTPlayer
     pages/ThemeManager.h
     MediaPlayer/AVCodecHandler.cpp
     MediaPlayer/AVCodecHandler.h
+    MediaPlayer/FrameHandler.cpp
+    MediaPlayer/FrameHandler.h
+    MediaPlayer/PacketQueue.cpp
+    MediaPlayer/PacketQueue.h
     MediaPlayer/PlayerWindowManager.cpp
     MediaPlayer/PlayerWindowManager.h
+    MediaPlayer/PlayerConfig.cpp
+    MediaPlayer/PlayerConfig.h
 )
 
 qt_add_qml_module(ZQTPlayer
@@ -63,6 +69,7 @@ qt_add_qml_module(ZQTPlayer
         Main.qml
         pages/Home.qml
         pages/Settings.qml
+        pages/LocalMediaPlayer.qml
         MediaPlayer/MediaInfoDialog.qml
     SOURCES
         pages/HomeController.h
@@ -77,8 +84,14 @@ qt_add_qml_module(ZQTPlayer
         pages/ThemeManager.cpp
         MediaPlayer/AVCodecHandler.h
         MediaPlayer/AVCodecHandler.cpp
+        MediaPlayer/FrameHandler.h
+        MediaPlayer/FrameHandler.cpp
+        MediaPlayer/PacketQueue.h
+        MediaPlayer/PacketQueue.cpp
         MediaPlayer/PlayerWindowManager.h
         MediaPlayer/PlayerWindowManager.cpp
+        MediaPlayer/PlayerConfig.h
+        MediaPlayer/PlayerConfig.cpp
 )
 
 set_target_properties(ZQTPlayer PROPERTIES
@@ -90,6 +103,7 @@ target_link_libraries(ZQTPlayer
     PRIVATE
         Qt6::Quick
         Qt6::QuickControls2
+        Qt6::Multimedia
         ${FFMPEG_LIBRARIES}
 )
 

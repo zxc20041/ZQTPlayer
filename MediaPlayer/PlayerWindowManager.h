@@ -3,9 +3,15 @@
 #include <QObject>
 #include <QString>
 #include <QSize>
+#include <QTimer>
+#include <QThread>
 #include <QtQml/qqml.h>
+#include <QVideoSink>
 #include <memory>
 #include "AVCodecHandler.h"
+#include "PlayerConfig.h"
+
+class FrameHandler;
 
 /// @brief QML-visible controller that handles drag-drop file import
 ///        and exposes media metadata for the info panel.
@@ -34,8 +40,18 @@ class PlayerWindowManager : public QObject
     Q_PROPERTY(QString durationText  READ durationText   NOTIFY mediaChanged)
     Q_PROPERTY(QString resolutionText READ resolutionText NOTIFY mediaChanged)
 
+    // ── Playback ──
+    Q_PROPERTY(QVideoSink* videoSink READ videoSink WRITE setVideoSink NOTIFY videoSinkChanged)
+    Q_PROPERTY(bool playing READ isPlaying NOTIFY playingChanged)
+    Q_PROPERTY(double position     READ position     NOTIFY positionChanged)
+    Q_PROPERTY(QString positionText READ positionText NOTIFY positionChanged)
+
+    // ── Config ──
+    Q_PROPERTY(PlayerConfig* config READ config CONSTANT)
+
 public:
     explicit PlayerWindowManager(QObject *parent = nullptr);
+    ~PlayerWindowManager() override;
 
     // ── Drop enabled ──
     bool dropEnabled() const;
@@ -43,11 +59,31 @@ public:
 
     // ── Open / close media ──
     /// Called from QML when a file is dropped or chosen.
-    /// Returns true if the file was successfully opened.
-    Q_INVOKABLE bool openMedia(const QString &path);
+    /// Opens asynchronously; emits mediaChanged() + auto-plays on success.
+    Q_INVOKABLE void openMedia(const QString &path);
 
     /// Close current media and clear metadata.
     Q_INVOKABLE void closeMedia();
+
+    // ── Playback control ──
+    Q_INVOKABLE void play();
+    Q_INVOKABLE void pause();
+    Q_INVOKABLE void stop();
+    Q_INVOKABLE void togglePlayPause();
+
+    // ── Video sink ──
+    QVideoSink *videoSink() const;
+    void setVideoSink(QVideoSink *sink);
+
+    // ── Playing state ──
+    bool isPlaying() const;
+
+    // ── Position ──
+    double  position() const;
+    QString positionText() const;
+
+    // ── Config ──
+    PlayerConfig *config() const;
 
     // ── Property getters ──
     bool    hasMedia() const;
@@ -72,8 +108,23 @@ signals:
     void dropEnabledChanged();
     void mediaChanged();
     void mediaOpenFailed(const QString &path);
+    void videoSinkChanged();
+    void playingChanged();
+    void positionChanged();
+    void playbackFinished();
+
+private slots:
+    void onPositionTimer();
 
 private:
     bool m_dropEnabled = true;
     AVCodecHandler m_codec;
+    FrameHandler  *m_frameHandler = nullptr;   // owned, child QObject
+    QVideoSink    *m_videoSink    = nullptr;   // non-owning, from QML VideoOutput
+    QTimer         m_positionTimer;
+    double         m_position     = 0.0;
+    PlayerConfig  *m_config       = nullptr;   // owned, child QObject
+
+    /// Async helper: runs AVCodecHandler::open() off the main thread
+    void openMediaAsync(const QString &localPath);
 };

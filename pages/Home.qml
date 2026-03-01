@@ -39,9 +39,7 @@ ApplicationWindow {
                     dropOverlay.visible = false;
                     if (drop.hasUrls && drop.urls.length > 0) {
                         let path = drop.urls[0].toString();
-                        if (playerManager.openMedia(path)) {
-                            mediaInfoDialog.open();
-                        }
+                        stack.push(localPlayerPage, { mediaSource: path });
                     }
                 }
 
@@ -117,6 +115,13 @@ ApplicationWindow {
     Component {
         id: settingsPage
         Settings {
+            onBackHome: stack.pop()
+        }
+    }
+
+    Component {
+        id: localPlayerPage
+        LocalMediaPlayer {
             onBackHome: stack.pop()
         }
     }

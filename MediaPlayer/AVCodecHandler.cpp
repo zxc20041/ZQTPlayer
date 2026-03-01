@@ -1,10 +1,13 @@
 #include "AVCodecHandler.h"
+#include "FrameHandler.h"
 #include <QDebug>
+#include <chrono>
 
 AVCodecHandler::AVCodecHandler() = default;
 
 AVCodecHandler::~AVCodecHandler()
 {
+    stop();
     close();
 }
 
@@ -45,6 +48,10 @@ bool AVCodecHandler::open()
         return false;
     }
     m_formatCtx.reset(rawCtx);
+
+    // Limit stream analysis to reduce UI freeze on main thread
+    m_formatCtx->probesize       = 1000000;   // 1 MB max probe data
+    m_formatCtx->max_analyze_duration = 500000; // 0.5 s max analysis
 
     // Read stream info
     if (avformat_find_stream_info(m_formatCtx.get(), nullptr) < 0) {
@@ -192,6 +199,298 @@ AVCodecContext *AVCodecHandler::audioCodecContext() const
 }
 
 // ── Private ────────────────────────────────────────────────
+
+// ── Playback control ───────────────────────────────────────
+
+void AVCodecHandler::play()
+{
+    if (!isOpen()) {
+        qWarning() << "AVCodecHandler::play() – not open";
+        return;
+    }
+    if (m_status == AVPlayerStatus::Playing) return;
+
+    if (m_status == AVPlayerStatus::Paused) {
+        resume();
+        return;
+    }
+
+    // Fresh start — join any leftover threads from a previous run (e.g. after EOF)
+    joinThreads();
+
+    m_abortRequested = false;
+    m_paused = false;
+    m_videoQueue.restart();
+    m_audioQueue.restart();
+
+    // If the container was previously read to EOF, seek back to the beginning
+    av_seek_frame(m_formatCtx.get(), -1, 0, AVSEEK_FLAG_BACKWARD);
+    if (m_videoCodecCtx) avcodec_flush_buffers(m_videoCodecCtx);
+    if (m_audioCodecCtx) avcodec_flush_buffers(m_audioCodecCtx);
+
+    // Initialise FrameHandler contexts
+    if (m_frameHandler) {
+        if (m_videoCodecCtx) {
+            m_frameHandler->initVideo(m_videoCodecCtx->width,
+                                      m_videoCodecCtx->height,
+                                      m_videoCodecCtx->pix_fmt);
+        }
+        if (m_audioCodecCtx) {
+            AVRational audioTb = m_formatCtx->streams[m_audioStreamIdx]->time_base;
+            m_frameHandler->initAudio(m_audioCodecCtx->sample_rate,
+                                      m_audioCodecCtx->ch_layout,
+                                      static_cast<AVSampleFormat>(m_audioCodecCtx->sample_fmt),
+                                      audioTb);
+        }
+    }
+
+    m_status = AVPlayerStatus::Playing;
+    startThreads();
+}
+
+void AVCodecHandler::pause()
+{
+    if (m_status != AVPlayerStatus::Playing) return;
+    {
+        std::lock_guard lock(m_pauseMutex);
+        m_paused = true;
+    }
+    m_status = AVPlayerStatus::Paused;
+}
+
+void AVCodecHandler::resume()
+{
+    if (m_status != AVPlayerStatus::Paused) return;
+    {
+        std::lock_guard lock(m_pauseMutex);
+        m_paused = false;
+    }
+    m_pauseCond.notify_all();
+    m_status = AVPlayerStatus::Playing;
+}
+
+void AVCodecHandler::stop()
+{
+    if (m_status == AVPlayerStatus::Stopped) return;
+
+    qDebug() << "AVCodecHandler::stop() – begin";
+    m_abortRequested = true;
+
+    // Unblock paused threads first
+    {
+        std::lock_guard lock(m_pauseMutex);
+        m_paused = false;
+    }
+    m_pauseCond.notify_all();
+
+    // Abort the queues so blocked push/pop return immediately
+    m_videoQueue.abort();
+    m_audioQueue.abort();
+
+    // Signal FrameHandler to bail out of any blocking write loops
+    // *before* we join, so the threads can actually exit.
+    if (m_frameHandler)
+        m_frameHandler->requestAbort();
+
+    joinThreads();
+
+    m_videoQueue.flush();
+    m_audioQueue.flush();
+
+    if (m_frameHandler)
+        m_frameHandler->cleanup();
+
+    m_status = AVPlayerStatus::Stopped;
+    qDebug() << "AVCodecHandler::stop() – done";
+}
+
+AVPlayerStatus AVCodecHandler::status() const
+{
+    return m_status.load();
+}
+
+// ── Thread helpers ─────────────────────────────────────────
+
+void AVCodecHandler::startThreads()
+{
+    m_demuxThread       = std::thread(&AVCodecHandler::demuxLoop, this);
+    if (m_videoCodecCtx)
+        m_videoDecodeThread = std::thread(&AVCodecHandler::videoDecodeLoop, this);
+    if (m_audioCodecCtx)
+        m_audioDecodeThread = std::thread(&AVCodecHandler::audioDecodeLoop, this);
+}
+
+void AVCodecHandler::joinThreads()
+{
+    qDebug() << "AVCodecHandler::joinThreads – waiting...";
+    if (m_demuxThread.joinable())       m_demuxThread.join();
+    qDebug() << "AVCodecHandler::joinThreads – demux joined";
+    if (m_videoDecodeThread.joinable()) m_videoDecodeThread.join();
+    qDebug() << "AVCodecHandler::joinThreads – video joined";
+    if (m_audioDecodeThread.joinable()) m_audioDecodeThread.join();
+    qDebug() << "AVCodecHandler::joinThreads – all joined";
+}
+
+void AVCodecHandler::waitIfPaused()
+{
+    std::unique_lock lock(m_pauseMutex);
+    m_pauseCond.wait(lock, [this] { return !m_paused || m_abortRequested; });
+}
+
+// ── Thread loops ───────────────────────────────────────────
+
+void AVCodecHandler::demuxLoop()
+{
+    AVPacket *pkt = av_packet_alloc();
+    if (!pkt) return;
+
+    while (!m_abortRequested) {
+        waitIfPaused();
+        if (m_abortRequested) break;
+
+        int ret = av_read_frame(m_formatCtx.get(), pkt);
+        if (ret < 0) {
+            // EOF or error — signal decoders that no more packets are coming
+            m_status = AVPlayerStatus::EndOfFile;
+            break;
+        }
+
+        if (pkt->stream_index == m_videoStreamIdx) {
+            if (!m_videoQueue.push(pkt)) break;   // aborted
+        } else if (pkt->stream_index == m_audioStreamIdx) {
+            if (!m_audioQueue.push(pkt)) break;   // aborted
+        }
+        av_packet_unref(pkt);
+    }
+
+    av_packet_free(&pkt);
+
+    qDebug() << "AVCodecHandler::demuxLoop – exiting";
+
+    // Tell decode threads there is nothing more to consume
+    m_videoQueue.abort();
+    m_audioQueue.abort();
+}
+
+void AVCodecHandler::videoDecodeLoop()
+{
+    AVPacket *pkt = nullptr;
+    AVFrame  *frame = av_frame_alloc();
+    if (!frame) return;
+
+    while (!m_abortRequested) {
+        waitIfPaused();
+        if (m_abortRequested) break;
+
+        if (!m_videoQueue.pop(&pkt)) break;      // aborted or EOF
+
+        int ret = avcodec_send_packet(m_videoCodecCtx, pkt);
+        av_packet_free(&pkt);
+        if (ret < 0) continue;
+
+        while (ret >= 0 && !m_abortRequested) {
+            ret = avcodec_receive_frame(m_videoCodecCtx, frame);
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
+            if (ret < 0) break;
+
+            // ── PTS-based sync: pace video frames to audio clock ──
+            if (m_frameHandler && frame->pts != AV_NOPTS_VALUE) {
+                AVRational tb = m_formatCtx->streams[m_videoStreamIdx]->time_base;
+                double videoPts = frame->pts * av_q2d(tb);
+
+                // Sync to audio clock when audio stream is present
+                if (m_audioCodecCtx) {
+                    double clock = m_frameHandler->audioClock();
+                    if (clock > 0.0) {
+                        double diff = videoPts - clock;
+                        if (diff > 0.005) {
+                            // Video ahead of audio → interruptible sleep to sync
+                            auto us = static_cast<int64_t>(diff * 1e6);
+                            if (us > 0 && us < 5000000) { // safety cap 5 s
+                                std::unique_lock lock(m_pauseMutex);
+                                m_pauseCond.wait_for(lock, std::chrono::microseconds(us),
+                                    [this] { return m_abortRequested.load(); });
+                            }
+                        } else if (diff < -0.05) {
+                            // Video behind >50 ms → drop frame
+                            av_frame_unref(frame);
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if (m_frameHandler)
+                m_frameHandler->processVideoFrame(frame);
+
+            av_frame_unref(frame);
+        }
+    }
+
+    // Flush decoder (drain buffered frames) — skip if abort was requested
+    if (!m_abortRequested) {
+        avcodec_send_packet(m_videoCodecCtx, nullptr);
+        while (!m_abortRequested && avcodec_receive_frame(m_videoCodecCtx, frame) == 0) {
+            if (m_frameHandler)
+                m_frameHandler->processVideoFrame(frame);
+            av_frame_unref(frame);
+        }
+    }
+
+    qDebug() << "AVCodecHandler::videoDecodeLoop – exiting";
+    av_frame_free(&frame);
+}
+
+void AVCodecHandler::audioDecodeLoop()
+{
+    AVPacket *pkt = nullptr;
+    AVFrame  *frame = av_frame_alloc();
+    if (!frame) return;
+
+    while (!m_abortRequested) {
+        waitIfPaused();
+        if (m_abortRequested) break;
+
+        if (!m_audioQueue.pop(&pkt)) break;      // aborted or EOF
+
+        int ret = avcodec_send_packet(m_audioCodecCtx, pkt);
+        av_packet_free(&pkt);
+        if (ret < 0) continue;
+
+        while (ret >= 0 && !m_abortRequested) {
+            ret = avcodec_receive_frame(m_audioCodecCtx, frame);
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
+            if (ret < 0) break;
+
+            if (m_frameHandler)
+                m_frameHandler->processAudioFrame(frame);
+
+            av_frame_unref(frame);
+        }
+    }
+
+    // Flush decoder — skip if abort was requested
+    if (!m_abortRequested) {
+        avcodec_send_packet(m_audioCodecCtx, nullptr);
+        while (!m_abortRequested && avcodec_receive_frame(m_audioCodecCtx, frame) == 0) {
+            if (m_frameHandler)
+                m_frameHandler->processAudioFrame(frame);
+            av_frame_unref(frame);
+        }
+    }
+
+    qDebug() << "AVCodecHandler::audioDecodeLoop – exiting";
+    av_frame_free(&frame);
+}
+
+// ── Frame handler ──────────────────────────────────────────
+
+void AVCodecHandler::setFrameHandler(FrameHandler *handler)
+{
+    m_frameHandler = handler;
+}
+
+// ── Private codec helper ───────────────────────────────────
 
 bool AVCodecHandler::openCodec(int streamIndex, AVCodecContext **outCtx)
 {
