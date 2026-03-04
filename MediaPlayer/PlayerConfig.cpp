@@ -86,3 +86,15 @@ void PlayerConfig::setSwsFilterInt(int filter)
 {
     setSwsFilter(static_cast<SwsFilterMode>(filter));
 }
+
+bool PlayerConfig::realtimeSeekPreview() const
+{
+    return m_realtimeSeekPreview;
+}
+
+void PlayerConfig::setRealtimeSeekPreview(bool enabled)
+{
+    if (m_realtimeSeekPreview == enabled) return;
+    m_realtimeSeekPreview = enabled;
+    emit realtimeSeekPreviewChanged();
+}

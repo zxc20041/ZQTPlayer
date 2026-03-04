@@ -4,6 +4,7 @@
 #include <QUrl>
 #include <QDebug>
 #include <QVideoSink>
+#include <cmath>
 
 PlayerWindowManager::PlayerWindowManager(QObject *parent)
     : QObject(parent)
@@ -152,6 +153,29 @@ void PlayerWindowManager::togglePlayPause()
     }
 }
 
+bool PlayerWindowManager::seek(double seconds)
+{
+    if (!m_codec.isOpen()) return false;
+
+    const double dur = m_codec.durationSeconds();
+    if (dur > 0.0) {
+        seconds = qBound(0.0, seconds, dur);
+    } else {
+        seconds = qMax(0.0, seconds);
+    }
+
+    const bool ok = m_codec.seek(seconds);
+    if (!ok) return false;
+
+    m_seekUiHold = true;
+    m_seekUiTarget = seconds;
+    m_seekUiExpireMs = QDateTime::currentMSecsSinceEpoch() + 1200;
+
+    m_position = seconds;
+    emit positionChanged();
+    return true;
+}
+
 // ── Video sink ───────────────────────────────────────────────────
 
 QVideoSink *PlayerWindowManager::videoSink() const
@@ -199,6 +223,16 @@ void PlayerWindowManager::onPositionTimer()
 {
     // Update position from the audio clock
     double pos = m_frameHandler->audioClock();
+
+    if (m_seekUiHold) {
+        const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        if (std::abs(pos - m_seekUiTarget) <= 1.0 || nowMs >= m_seekUiExpireMs) {
+            m_seekUiHold = false;
+        } else {
+            pos = m_seekUiTarget;
+        }
+    }
+
     if (pos != m_position) {
         m_position = pos;
         emit positionChanged();

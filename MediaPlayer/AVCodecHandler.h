@@ -59,6 +59,10 @@ public:
     /// Stop playback: abort queues, join threads, flush state.
     void stop();
 
+    /// Seek to the given timestamp (seconds).
+    /// If currently playing/paused, playback is restarted from target position.
+    bool seek(double seconds);
+
     AVPlayerStatus status() const;
 
     // ── Stream metadata (valid after open()) ──
@@ -101,6 +105,8 @@ public:
 
 private:
     bool openCodec(int streamIndex, AVCodecContext **outCtx);
+    bool performSeekInternal(int64_t targetTs);
+    bool decodePreviewFrameFromCurrentPos();
 
     // ── Thread entry points (run on worker threads) ──
     void demuxLoop();        ///< Read packets from container → push into queues
@@ -136,9 +142,15 @@ private:
     std::atomic<AVPlayerStatus> m_status{AVPlayerStatus::Stopped};
     std::atomic<bool> m_abortRequested{false};
     std::atomic<int>  m_activeDecodeThreads{0}; ///< counts running decode threads
+    std::atomic<int64_t> m_seekTargetUs{-1};    ///< pending seek target (microseconds), -1 when inactive
+    std::atomic<bool> m_waitKeyFrameAfterSeek{false};
 
     // ── Members: frame handler ──
     FrameHandler *m_frameHandler = nullptr;
+
+    // ── Members: codec operation sync ──
+    std::mutex              m_codecMutex;       ///< guards avcodec send/receive/flush operations
+    std::mutex              m_formatMutex;      ///< guards avformat read/seek operations
 
     // ── Members: pause mechanism ──
     std::mutex              m_pauseMutex;

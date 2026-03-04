@@ -25,6 +25,10 @@ class PlayerConfig : public QObject
     // ── Scaling filter ──
     Q_PROPERTY(int swsFilter READ swsFilterInt WRITE setSwsFilterInt NOTIFY swsFilterChanged)
 
+    // ── Seek preview ──
+    /// Enable throttled real-time seek while dragging the progress slider.
+    Q_PROPERTY(bool realtimeSeekPreview READ realtimeSeekPreview WRITE setRealtimeSeekPreview NOTIFY realtimeSeekPreviewChanged)
+
 public:
     explicit PlayerConfig(QObject *parent = nullptr);
 
@@ -54,15 +58,21 @@ public:
     int  swsFilterInt() const;
     void setSwsFilterInt(int filter);
 
+    // ── Seek preview ──
+    bool realtimeSeekPreview() const;
+    void setRealtimeSeekPreview(bool enabled);
+
 signals:
     void volumeChanged();
     void mutedChanged();
     void renderModeChanged();
     void swsFilterChanged();
+    void realtimeSeekPreviewChanged();
 
 private:
     int              m_volume     = 80;
     bool             m_muted      = false;
     VideoRenderMode  m_renderMode = VideoRenderMode::QVideoSink;
     SwsFilterMode    m_swsFilter  = SwsFilterMode::Bilinear;
+    bool             m_realtimeSeekPreview = true;
 };

@@ -5,6 +5,7 @@
 #include <QSize>
 #include <QTimer>
 #include <QThread>
+#include <QDateTime>
 #include <QtQml/qqml.h>
 #include <QVideoSink>
 #include <memory>
@@ -70,6 +71,7 @@ public:
     Q_INVOKABLE void pause();
     Q_INVOKABLE void stop();
     Q_INVOKABLE void togglePlayPause();
+    Q_INVOKABLE bool seek(double seconds);
 
     // ── Video sink ──
     QVideoSink *videoSink() const;
@@ -124,6 +126,9 @@ private:
     QTimer         m_positionTimer;
     double         m_position     = 0.0;
     PlayerConfig  *m_config       = nullptr;   // owned, child QObject
+    bool           m_seekUiHold   = false;
+    double         m_seekUiTarget = 0.0;
+    qint64         m_seekUiExpireMs = 0;
 
     /// Async helper: runs AVCodecHandler::open() off the main thread
     void openMediaAsync(const QString &localPath);

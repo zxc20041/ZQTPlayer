@@ -2,6 +2,7 @@
 #include "FrameHandler.h"
 #include <QDebug>
 #include <chrono>
+#include <limits>
 
 AVCodecHandler::AVCodecHandler() = default;
 
@@ -86,6 +87,9 @@ bool AVCodecHandler::open()
         return false;
     }
 
+    m_seekTargetUs = -1;
+    m_waitKeyFrameAfterSeek = false;
+
     return true;
 }
 
@@ -105,6 +109,8 @@ void AVCodecHandler::close()
     }
     m_videoStreamIdx = -1;
     m_audioStreamIdx = -1;
+    m_seekTargetUs = -1;
+    m_waitKeyFrameAfterSeek = false;
 }
 
 bool AVCodecHandler::isOpen() const
@@ -211,6 +217,7 @@ void AVCodecHandler::play()
         qWarning() << "AVCodecHandler::play() – not open";
         return;
     }
+    const AVPlayerStatus oldStatus = m_status.load();
     if (m_status == AVPlayerStatus::Playing) return;
 
     if (m_status == AVPlayerStatus::Paused) {
@@ -227,8 +234,13 @@ void AVCodecHandler::play()
     m_videoQueue.restart();
     m_audioQueue.restart();
 
-    // If the container was previously read to EOF, seek back to the beginning
-    av_seek_frame(m_formatCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
+    // Restart from beginning only when replaying after EOF.
+    // For normal play-after-seek, keep the current demux position.
+    if (oldStatus == AVPlayerStatus::EndOfFile ||
+        oldStatus == AVPlayerStatus::PlaybackDone) {
+        std::lock_guard formatLock(m_formatMutex);
+        av_seek_frame(m_formatCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
+    }
     if (m_videoCodecCtx) avcodec_flush_buffers(m_videoCodecCtx);
     if (m_audioCodecCtx) avcodec_flush_buffers(m_audioCodecCtx);
 
@@ -305,7 +317,46 @@ void AVCodecHandler::stop()
         m_frameHandler->cleanup();
 
     m_status = AVPlayerStatus::Stopped;
+    m_seekTargetUs = -1;
+    m_waitKeyFrameAfterSeek = false;
     qDebug() << "AVCodecHandler::stop() – done";
+}
+
+bool AVCodecHandler::seek(double seconds)
+{
+    if (!isOpen()) return false;
+
+    const double duration = durationSeconds();
+    if (duration > 0.0) {
+        if (seconds < 0.0) seconds = 0.0;
+        if (seconds > duration) seconds = duration;
+    } else if (seconds < 0.0) {
+        seconds = 0.0;
+    }
+
+    const int64_t targetTs = static_cast<int64_t>(seconds * AV_TIME_BASE);
+    const AVPlayerStatus st = m_status.load();
+
+    // Keep worker threads/resources alive and perform seek immediately.
+    // This avoids thread recreation stalls during slider interaction.
+    Q_UNUSED(st);
+    m_seekTargetUs = targetTs;
+    if (!performSeekInternal(targetTs)) {
+        m_seekTargetUs = -1;
+        return false;
+    }
+
+    // Keyframe gate is useful for continuous playback path.
+    // For paused realtime preview, disable the gate so preview can refresh
+    // frequently instead of waiting for the next IDR interval.
+    m_waitKeyFrameAfterSeek = (st != AVPlayerStatus::Paused);
+
+    if (st == AVPlayerStatus::Paused && m_videoCodecCtx && m_frameHandler) {
+        decodePreviewFrameFromCurrentPos();
+    }
+
+    m_seekTargetUs = -1;
+    return true;
 }
 
 AVPlayerStatus AVCodecHandler::status() const
@@ -352,7 +403,11 @@ void AVCodecHandler::demuxLoop()
         waitIfPaused();
         if (m_abortRequested) break;
 
-        int ret = av_read_frame(m_formatCtx, pkt);
+        int ret = 0;
+        {
+            std::lock_guard formatLock(m_formatMutex);
+            ret = av_read_frame(m_formatCtx, pkt);
+        }
         if (ret < 0) {
             // EOF or error — signal decoders that no more packets are coming
             m_status = AVPlayerStatus::EndOfFile;
@@ -391,14 +446,46 @@ void AVCodecHandler::videoDecodeLoop()
 
         if (!m_videoQueue.pop(&pkt)) break;      // aborted or EOF
 
-        int ret = avcodec_send_packet(m_videoCodecCtx, pkt);
+        int ret = 0;
+        {
+            std::lock_guard lock(m_codecMutex);
+            ret = avcodec_send_packet(m_videoCodecCtx, pkt);
+        }
         av_packet_free(&pkt);
         if (ret < 0) continue;
 
         while (ret >= 0 && !m_abortRequested) {
-            ret = avcodec_receive_frame(m_videoCodecCtx, frame);
+            {
+                std::lock_guard lock(m_codecMutex);
+                ret = avcodec_receive_frame(m_videoCodecCtx, frame);
+            }
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
             if (ret < 0) break;
+
+            if (m_waitKeyFrameAfterSeek.load() && !(frame->flags & AV_FRAME_FLAG_KEY)) {
+                av_frame_unref(frame);
+                continue;
+            }
+
+            if (m_waitKeyFrameAfterSeek.load() && (frame->flags & AV_FRAME_FLAG_KEY)) {
+                m_waitKeyFrameAfterSeek = false;
+            }
+
+            const int64_t seekTargetUs = m_seekTargetUs.load();
+            if (seekTargetUs >= 0 && frame->pts != AV_NOPTS_VALUE) {
+                AVRational tb = m_formatCtx->streams[m_videoStreamIdx]->time_base;
+                const int64_t frameUs = av_rescale_q(frame->pts, tb, AVRational{1, AV_TIME_BASE});
+
+                if (frameUs + 100000 < seekTargetUs) {
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                if (!m_audioCodecCtx) {
+                    int64_t expected = seekTargetUs;
+                    m_seekTargetUs.compare_exchange_strong(expected, -1);
+                }
+            }
 
             // ── PTS-based sync: pace video frames to audio clock ──
             if (m_frameHandler && frame->pts != AV_NOPTS_VALUE) {
@@ -436,8 +523,17 @@ void AVCodecHandler::videoDecodeLoop()
 
     // Flush decoder (drain buffered frames) — skip if abort was requested
     if (!m_abortRequested) {
-        avcodec_send_packet(m_videoCodecCtx, nullptr);
-        while (!m_abortRequested && avcodec_receive_frame(m_videoCodecCtx, frame) == 0) {
+        {
+            std::lock_guard lock(m_codecMutex);
+            avcodec_send_packet(m_videoCodecCtx, nullptr);
+        }
+        while (!m_abortRequested) {
+            int ret = 0;
+            {
+                std::lock_guard lock(m_codecMutex);
+                ret = avcodec_receive_frame(m_videoCodecCtx, frame);
+            }
+            if (ret != 0) break;
             if (m_frameHandler)
                 m_frameHandler->processVideoFrame(frame);
             av_frame_unref(frame);
@@ -467,14 +563,45 @@ void AVCodecHandler::audioDecodeLoop()
 
         if (!m_audioQueue.pop(&pkt)) break;      // aborted or EOF
 
-        int ret = avcodec_send_packet(m_audioCodecCtx, pkt);
+        int ret = 0;
+        {
+            std::lock_guard lock(m_codecMutex);
+            ret = avcodec_send_packet(m_audioCodecCtx, pkt);
+        }
         av_packet_free(&pkt);
         if (ret < 0) continue;
 
         while (ret >= 0 && !m_abortRequested) {
-            ret = avcodec_receive_frame(m_audioCodecCtx, frame);
+            {
+                std::lock_guard lock(m_codecMutex);
+                ret = avcodec_receive_frame(m_audioCodecCtx, frame);
+            }
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
             if (ret < 0) break;
+
+            if (m_waitKeyFrameAfterSeek.load()) {
+                av_frame_unref(frame);
+                continue;
+            }
+
+            const int64_t seekTargetUs = m_seekTargetUs.load();
+            if (seekTargetUs >= 0 && frame->pts != AV_NOPTS_VALUE) {
+                AVRational tb = m_formatCtx->streams[m_audioStreamIdx]->time_base;
+                const int64_t frameStartUs = av_rescale_q(frame->pts, tb, AVRational{1, AV_TIME_BASE});
+                const int sampleRate = frame->sample_rate > 0 ? frame->sample_rate : m_audioCodecCtx->sample_rate;
+                const int64_t frameDurUs = sampleRate > 0
+                    ? av_rescale_q(frame->nb_samples, AVRational{1, sampleRate}, AVRational{1, AV_TIME_BASE})
+                    : 0;
+                const int64_t frameEndUs = frameStartUs + frameDurUs;
+
+                if (frameEndUs + 100000 < seekTargetUs) {
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                int64_t expected = seekTargetUs;
+                m_seekTargetUs.compare_exchange_strong(expected, -1);
+            }
 
             if (m_frameHandler)
                 m_frameHandler->processAudioFrame(frame);
@@ -485,8 +612,17 @@ void AVCodecHandler::audioDecodeLoop()
 
     // Flush decoder — skip if abort was requested
     if (!m_abortRequested) {
-        avcodec_send_packet(m_audioCodecCtx, nullptr);
-        while (!m_abortRequested && avcodec_receive_frame(m_audioCodecCtx, frame) == 0) {
+        {
+            std::lock_guard lock(m_codecMutex);
+            avcodec_send_packet(m_audioCodecCtx, nullptr);
+        }
+        while (!m_abortRequested) {
+            int ret = 0;
+            {
+                std::lock_guard lock(m_codecMutex);
+                ret = avcodec_receive_frame(m_audioCodecCtx, frame);
+            }
+            if (ret != 0) break;
             if (m_frameHandler)
                 m_frameHandler->processAudioFrame(frame);
             av_frame_unref(frame);
@@ -508,6 +644,116 @@ void AVCodecHandler::audioDecodeLoop()
 void AVCodecHandler::setFrameHandler(FrameHandler *handler)
 {
     m_frameHandler = handler;
+}
+
+bool AVCodecHandler::performSeekInternal(int64_t targetTs)
+{
+    int ret = 0;
+    {
+        std::lock_guard formatLock(m_formatMutex);
+        if (m_videoStreamIdx >= 0) {
+            AVRational tb = m_formatCtx->streams[m_videoStreamIdx]->time_base;
+            const int64_t streamTs = av_rescale_q(targetTs, AVRational{1, AV_TIME_BASE}, tb);
+            ret = av_seek_frame(m_formatCtx, m_videoStreamIdx, streamTs, AVSEEK_FLAG_BACKWARD);
+        } else {
+            ret = av_seek_frame(m_formatCtx, -1, targetTs, AVSEEK_FLAG_BACKWARD);
+        }
+
+        if (ret < 0) {
+            ret = avformat_seek_file(m_formatCtx, -1,
+                                     std::numeric_limits<int64_t>::min(),
+                                     targetTs,
+                                     std::numeric_limits<int64_t>::max(),
+                                     0);
+        }
+    }
+    if (ret < 0) {
+        char err[AV_ERROR_MAX_STRING_SIZE]{};
+        av_strerror(ret, err, sizeof(err));
+        qWarning() << "AVCodecHandler::performSeekInternal() failed:" << err;
+        return false;
+    }
+
+    m_videoQueue.flush();
+    m_audioQueue.flush();
+
+    {
+        std::lock_guard lock(m_codecMutex);
+        if (m_videoCodecCtx) avcodec_flush_buffers(m_videoCodecCtx);
+        if (m_audioCodecCtx) avcodec_flush_buffers(m_audioCodecCtx);
+    }
+
+    return true;
+}
+
+bool AVCodecHandler::decodePreviewFrameFromCurrentPos()
+{
+    AVPacket *pkt = av_packet_alloc();
+    AVFrame  *frame = av_frame_alloc();
+    if (!pkt || !frame) {
+        if (pkt) av_packet_free(&pkt);
+        if (frame) av_frame_free(&frame);
+        return false;
+    }
+
+    bool gotFrame = false;
+    const int64_t seekTargetUs = m_seekTargetUs.load();
+
+    for (int i = 0; i < 400 && !m_abortRequested; ++i) {
+        int ret = 0;
+        {
+            std::lock_guard formatLock(m_formatMutex);
+            ret = av_read_frame(m_formatCtx, pkt);
+        }
+        if (ret < 0) break;
+
+        if (pkt->stream_index != m_videoStreamIdx) {
+            av_packet_unref(pkt);
+            continue;
+        }
+
+        {
+            std::lock_guard codecLock(m_codecMutex);
+            ret = avcodec_send_packet(m_videoCodecCtx, pkt);
+        }
+        av_packet_unref(pkt);
+        if (ret < 0) continue;
+
+        while (!m_abortRequested) {
+            {
+                std::lock_guard codecLock(m_codecMutex);
+                ret = avcodec_receive_frame(m_videoCodecCtx, frame);
+            }
+
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
+            if (ret < 0) break;
+
+            if (seekTargetUs >= 0 && frame->pts != AV_NOPTS_VALUE) {
+                AVRational tb = m_formatCtx->streams[m_videoStreamIdx]->time_base;
+                const int64_t frameUs = av_rescale_q(frame->pts, tb, AVRational{1, AV_TIME_BASE});
+                if (frameUs + 100000 < seekTargetUs) {
+                    av_frame_unref(frame);
+                    continue;
+                }
+            }
+
+            // Preview path: output first decodable frame near target.
+            m_waitKeyFrameAfterSeek = false;
+
+            if (m_frameHandler)
+                m_frameHandler->processVideoFrame(frame);
+
+            av_frame_unref(frame);
+            gotFrame = true;
+            break;
+        }
+
+        if (gotFrame) break;
+    }
+
+    av_packet_free(&pkt);
+    av_frame_free(&frame);
+    return gotFrame;
 }
 
 // ── Private codec helper ───────────────────────────────────

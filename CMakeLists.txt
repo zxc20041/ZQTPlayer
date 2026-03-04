@@ -95,7 +95,7 @@ qt_add_qml_module(ZQTPlayer
 )
 
 set_target_properties(ZQTPlayer PROPERTIES
-    WIN32_EXECUTABLE TRUE
+    WIN32_EXECUTABLE $<$<CONFIG:Debug>:FALSE>$<$<NOT:$<CONFIG:Debug>>:TRUE>
     MACOSX_BUNDLE TRUE
 )
 

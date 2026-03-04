@@ -12,6 +12,16 @@ Page {
     /// File path received from Home page via StackView push
     property string mediaSource: ""
 
+    function formatTime(seconds) {
+        const total = Math.max(0, Math.floor(seconds));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+
+        function pad2(v) { return v < 10 ? "0" + v : "" + v; }
+        return pad2(h) + ":" + pad2(m) + ":" + pad2(s);
+    }
+
     PlayerWindowManager {
         id: playerManager
         videoSink: videoOutput.videoSink
@@ -116,13 +126,115 @@ Page {
             Slider {
                 id: progressSlider
                 Layout.fillWidth: true
+                property real seekPreview: 0
+                property bool pendingSeek: false
+                property real pendingTarget: 0
+                property real lastPreviewSeek: -1
+                property bool resumeAfterRelease: false
                 from: 0
                 to: playerManager.hasMedia ? playerManager.duration : 1
-                value: playerManager.position
+                value: 0
                 enabled: playerManager.hasMedia
 
+                function requestSeek(target, lockUi) {
+                    if (!playerManager.hasMedia) return;
+                    if (lockUi) {
+                        pendingSeek = true;
+                        pendingTarget = target;
+                        settleTimer.restart();
+                    }
+                    playerManager.seek(target);
+                }
+
+                Binding {
+                    target: progressSlider
+                    property: "value"
+                    value: playerManager.position
+                    when: !progressSlider.pressed && !progressSlider.pendingSeek
+                }
+
+                onPressedChanged: {
+                    if (pressed) {
+                        if (playerManager.config.realtimeSeekPreview) {
+                            resumeAfterRelease = playerManager.playing;
+                            if (resumeAfterRelease)
+                                playerManager.pause();
+                        } else {
+                            resumeAfterRelease = false;
+                        }
+
+                        pendingSeek = false;
+                        settleTimer.stop();
+                        seekPreview = value;
+                        lastPreviewSeek = -1;
+                        throttleTimer.stop();
+                    } else {
+                        throttleTimer.stop();
+                        const target = seekPreview;
+                        Qt.callLater(function() {
+                            requestSeek(target, true);
+                            if (progressSlider.resumeAfterRelease) {
+                                playerManager.play();
+                                progressSlider.resumeAfterRelease = false;
+                            }
+                        });
+                    }
+                }
+
+                onValueChanged: {
+                    if (pressed) {
+                        seekPreview = value;
+                    }
+                }
+
                 onMoved: {
-                    // TODO: seek to position
+                    seekPreview = value;
+
+                    if (!playerManager.config.realtimeSeekPreview) return;
+
+                    if (!throttleTimer.running) {
+                        throttleTimer.start();
+                    } else {
+                        throttleTimer.restart();
+                    }
+                }
+
+                Timer {
+                    id: throttleTimer
+                    interval: 120
+                    repeat: false
+                    onTriggered: {
+                        if (!progressSlider.pressed) return;
+
+                        const target = progressSlider.seekPreview;
+                        if (Math.abs(target - progressSlider.lastPreviewSeek) < 0.2)
+                            return;
+
+                        progressSlider.lastPreviewSeek = target;
+                        playerManager.seek(target);
+                    }
+                }
+
+                Timer {
+                    id: settleTimer
+                    interval: 900
+                    repeat: false
+                    onTriggered: {
+                        progressSlider.pendingSeek = false;
+                    }
+                }
+            }
+
+            Connections {
+                target: playerManager
+                function onPositionChanged() {
+                    if (!progressSlider.pendingSeek)
+                        return;
+
+                    if (Math.abs(playerManager.position - progressSlider.pendingTarget) <= 1.0) {
+                        progressSlider.pendingSeek = false;
+                        settleTimer.stop();
+                    }
                 }
             }
 
@@ -133,7 +245,11 @@ Page {
                 // ── Time labels ──
                 Label {
                     id: currentTimeLabel
-                    text: playerManager.positionText
+                    text: progressSlider.pressed
+                          ? root.formatTime(progressSlider.seekPreview)
+                          : (progressSlider.pendingSeek
+                             ? root.formatTime(progressSlider.pendingTarget)
+                             : playerManager.positionText)
                     color: "white"
                     font.pointSize: 10
                     font.family: "Consolas"
