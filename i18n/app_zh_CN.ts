@@ -84,6 +84,94 @@
             <source>Display Language</source>
             <translation>显示语言</translation>
         </message>
+        <message>
+            <source>Playback</source>
+            <translation>播放设置</translation>
+        </message>
+        <message>
+            <source>Render Mode</source>
+            <translation>渲染模式</translation>
+        </message>
+        <message>
+            <source>QVideoSink (CPU)</source>
+            <translation>QVideoSink（CPU）</translation>
+        </message>
+        <message>
+            <source>OpenGL Texture</source>
+            <translation>OpenGL 纹理</translation>
+        </message>
+        <message>
+            <source>Scaling Filter</source>
+            <translation>缩放滤镜</translation>
+        </message>
+        <message>
+            <source>Point</source>
+            <translation>点采样</translation>
+        </message>
+        <message>
+            <source>Fast Bilinear</source>
+            <translation>快速双线性</translation>
+        </message>
+        <message>
+            <source>Bilinear</source>
+            <translation>双线性</translation>
+        </message>
+        <message>
+            <source>Bicubic</source>
+            <translation>双三次</translation>
+        </message>
+        <message>
+            <source>Lanczos</source>
+            <translation>Lanczos</translation>
+        </message>
+        <message>
+            <source>Real-time seek preview</source>
+            <translation>实时拖动预览</translation>
+        </message>
+        <message>
+            <source>Decode Backend</source>
+            <translation>解码后端</translation>
+        </message>
+        <message>
+            <source>Software</source>
+            <translation>软件解码</translation>
+        </message>
+        <message>
+            <source>Auto Hardware</source>
+            <translation>自动硬件解码</translation>
+        </message>
+        <message>
+            <source>D3D11VA</source>
+            <translation>D3D11VA</translation>
+        </message>
+        <message>
+            <source>VAAPI</source>
+            <translation>VAAPI</translation>
+        </message>
+        <message>
+            <source>VideoToolbox</source>
+            <translation>VideoToolbox</translation>
+        </message>
+        <message>
+            <source>Prefer zero-copy</source>
+            <translation>优先零拷贝</translation>
+        </message>
+        <message>
+            <source>Allow hardware decode fallback</source>
+            <translation>允许硬件解码回退</translation>
+        </message>
+        <message>
+            <source>OpenGL Flip X</source>
+            <translation>OpenGL 水平翻转</translation>
+        </message>
+        <message>
+            <source>OpenGL Flip Y</source>
+            <translation>OpenGL 垂直翻转</translation>
+        </message>
+        <message>
+            <source>OpenGL Lock Aspect Ratio</source>
+            <translation>OpenGL 锁定画面比例</translation>
+        </message>
     </context>
     <context>
         <name>MediaInfoDialog</name>

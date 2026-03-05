@@ -1,6 +1,8 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <QSettings>
 #include <QDebug>
 #include "ThemeManager.h"
@@ -8,6 +10,8 @@
 
 int main(int argc, char *argv[])
 {
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
+
     QGuiApplication app(argc, argv);
     app.setOrganizationName("ZQT");
     app.setApplicationName("ZQTPlayer");

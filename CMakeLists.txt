@@ -60,6 +60,8 @@ qt_add_executable(ZQTPlayer
     MediaPlayer/PlayerWindowManager.h
     MediaPlayer/PlayerConfig.cpp
     MediaPlayer/PlayerConfig.h
+    MediaPlayer/opengl/OpenGLVideoItem.cpp
+    MediaPlayer/opengl/OpenGLVideoItem.h
 )
 
 qt_add_qml_module(ZQTPlayer
@@ -92,6 +94,8 @@ qt_add_qml_module(ZQTPlayer
         MediaPlayer/PlayerWindowManager.cpp
         MediaPlayer/PlayerConfig.h
         MediaPlayer/PlayerConfig.cpp
+        MediaPlayer/opengl/OpenGLVideoItem.h
+        MediaPlayer/opengl/OpenGLVideoItem.cpp
 )
 
 set_target_properties(ZQTPlayer PROPERTIES
@@ -111,6 +115,7 @@ target_include_directories(ZQTPlayer
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/pages
         ${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer
+    ${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer/opengl
         ${FFMPEG_INCLUDE_DIRS}
 )
 

@@ -18,6 +18,15 @@ enum class VideoRenderMode : uint8_t {
     OpenGLTexture,  ///< GPU path: upload YUV planes as GL textures, shader does conversion
 };
 
+/// @brief Decoder backend selection (reserved for future HW decode integration).
+enum class VideoDecodeBackend : uint8_t {
+    Software,       ///< Always use software decoding
+    AutoHardware,   ///< Try hardware decode first, fallback to software
+    D3D11VA,        ///< Windows D3D11VA hardware decode
+    VAAPI,          ///< Linux VAAPI hardware decode
+    VideoToolbox,   ///< macOS VideoToolbox hardware decode
+};
+
 /// @brief Scaling / pixel-format conversion filter quality.
 ///        Maps directly to the SWS_* flags used by sws_getContext().
 enum class SwsFilterMode : uint8_t {

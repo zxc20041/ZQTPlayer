@@ -13,6 +13,9 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
 {
     m_codec.setFrameHandler(m_frameHandler);
 
+    m_frameHandler->setVideoRenderMode(m_config->renderMode());
+    m_frameHandler->setSwsFilter(m_config->swsFilter());
+
     // Position timer: fires every 200 ms while playing to update UI
     m_positionTimer.setInterval(200);
     connect(&m_positionTimer, &QTimer::timeout, this, &PlayerWindowManager::onPositionTimer);
@@ -24,6 +27,22 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
     connect(m_config, &PlayerConfig::mutedChanged, this, [this]() {
         m_frameHandler->setVolume(m_config->effectiveVolume());
     });
+
+    connect(m_config, &PlayerConfig::renderModeChanged, this, [this]() {
+        m_frameHandler->setVideoRenderMode(m_config->renderMode());
+    });
+
+    connect(m_config, &PlayerConfig::swsFilterChanged, this, [this]() {
+        m_frameHandler->setSwsFilter(m_config->swsFilter());
+    });
+
+    connect(m_frameHandler, &FrameHandler::videoFrameReady, this, [this](const QImage &image) {
+        if (m_glFrameSink) {
+            QMetaObject::invokeMethod(m_glFrameSink, "setFrame", Qt::QueuedConnection,
+                                      Q_ARG(QImage, image));
+        }
+        emit videoFrameReady(image);
+    }, Qt::DirectConnection);
 }
 
 PlayerWindowManager::~PlayerWindowManager()
@@ -189,6 +208,18 @@ void PlayerWindowManager::setVideoSink(QVideoSink *sink)
     m_videoSink = sink;
     m_frameHandler->setVideoSink(sink);
     emit videoSinkChanged();
+}
+
+QObject *PlayerWindowManager::glFrameSink() const
+{
+    return m_glFrameSink;
+}
+
+void PlayerWindowManager::setGlFrameSink(QObject *sink)
+{
+    if (m_glFrameSink == sink) return;
+    m_glFrameSink = sink;
+    emit glFrameSinkChanged();
 }
 
 // ── Playing state ─────────────────────────────────────────────────

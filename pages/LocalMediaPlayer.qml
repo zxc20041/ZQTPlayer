@@ -25,6 +25,7 @@ Page {
     PlayerWindowManager {
         id: playerManager
         videoSink: videoOutput.videoSink
+        glFrameSink: openGLVideoItem
     }
 
     // ── Video output ──
@@ -32,6 +33,16 @@ Page {
         id: videoOutput
         anchors.fill: parent
         fillMode: VideoOutput.PreserveAspectFit
+        visible: playerManager.config.renderMode === 0
+    }
+
+    OpenGLVideoItem {
+        id: openGLVideoItem
+        anchors.fill: parent
+        visible: playerManager.config.renderMode === 1
+        flipX: playerManager.config.videoFlipX
+        flipY: playerManager.config.videoFlipY
+        preserveAspectRatio: playerManager.config.lockAspectRatio
     }
 
     // ── Drop area for opening files directly ──

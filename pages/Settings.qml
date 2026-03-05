@@ -23,6 +23,10 @@ Page {
         id: themeManager
     }
 
+    PlayerConfig {
+        id: playerConfig
+    }
+
     // Currently selected category index
     property int currentCategory: 0
 
@@ -196,6 +200,116 @@ Page {
                         onActivated: function(index) {
                             languageManager.setCurrentIndex(index);
                         }
+                    }
+                }
+            }
+
+            // ---------- Playback ----------
+            GroupBox {
+                title: qsTr("Playback")
+                Layout.fillWidth: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 10
+
+                    RowLayout {
+                        spacing: 12
+
+                        Label {
+                            text: qsTr("Render Mode")
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        ComboBox {
+                            model: [qsTr("QVideoSink (CPU)"), qsTr("OpenGL Texture")]
+                            currentIndex: playerConfig.renderMode
+                            onActivated: function(index) {
+                                playerConfig.renderMode = index;
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        spacing: 12
+
+                        Label {
+                            text: qsTr("Scaling Filter")
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        ComboBox {
+                            model: [
+                                qsTr("Point"),
+                                qsTr("Fast Bilinear"),
+                                qsTr("Bilinear"),
+                                qsTr("Bicubic"),
+                                qsTr("Lanczos")
+                            ]
+                            currentIndex: playerConfig.swsFilter
+                            onActivated: function(index) {
+                                playerConfig.swsFilter = index;
+                            }
+                        }
+                    }
+
+                    Switch {
+                        text: qsTr("Real-time seek preview")
+                        checked: playerConfig.realtimeSeekPreview
+                        onToggled: playerConfig.realtimeSeekPreview = checked
+                    }
+
+                    RowLayout {
+                        spacing: 12
+
+                        Label {
+                            text: qsTr("Decode Backend")
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        ComboBox {
+                            model: [
+                                qsTr("Software"),
+                                qsTr("Auto Hardware"),
+                                qsTr("D3D11VA"),
+                                qsTr("VAAPI"),
+                                qsTr("VideoToolbox")
+                            ]
+                            currentIndex: playerConfig.decodeBackend
+                            onActivated: function(index) {
+                                playerConfig.decodeBackend = index;
+                            }
+                        }
+                    }
+
+                    Switch {
+                        text: qsTr("Prefer zero-copy")
+                        checked: playerConfig.preferZeroCopy
+                        onToggled: playerConfig.preferZeroCopy = checked
+                    }
+
+                    Switch {
+                        text: qsTr("Allow hardware decode fallback")
+                        checked: playerConfig.allowHwFallback
+                        onToggled: playerConfig.allowHwFallback = checked
+                    }
+
+                    Switch {
+                        text: qsTr("OpenGL Flip X")
+                        checked: playerConfig.videoFlipX
+                        onToggled: playerConfig.videoFlipX = checked
+                    }
+
+                    Switch {
+                        text: qsTr("OpenGL Flip Y")
+                        checked: playerConfig.videoFlipY
+                        onToggled: playerConfig.videoFlipY = checked
+                    }
+
+                    Switch {
+                        text: qsTr("OpenGL Lock Aspect Ratio")
+                        checked: playerConfig.lockAspectRatio
+                        onToggled: playerConfig.lockAspectRatio = checked
                     }
                 }
             }

@@ -8,6 +8,7 @@
 #include <QDateTime>
 #include <QtQml/qqml.h>
 #include <QVideoSink>
+#include <QImage>
 #include <memory>
 #include "AVCodecHandler.h"
 #include "PlayerConfig.h"
@@ -43,6 +44,7 @@ class PlayerWindowManager : public QObject
 
     // ── Playback ──
     Q_PROPERTY(QVideoSink* videoSink READ videoSink WRITE setVideoSink NOTIFY videoSinkChanged)
+    Q_PROPERTY(QObject* glFrameSink READ glFrameSink WRITE setGlFrameSink NOTIFY glFrameSinkChanged)
     Q_PROPERTY(bool playing READ isPlaying NOTIFY playingChanged)
     Q_PROPERTY(double position     READ position     NOTIFY positionChanged)
     Q_PROPERTY(QString positionText READ positionText NOTIFY positionChanged)
@@ -76,6 +78,8 @@ public:
     // ── Video sink ──
     QVideoSink *videoSink() const;
     void setVideoSink(QVideoSink *sink);
+    QObject *glFrameSink() const;
+    void setGlFrameSink(QObject *sink);
 
     // ── Playing state ──
     bool isPlaying() const;
@@ -111,6 +115,8 @@ signals:
     void mediaChanged();
     void mediaOpenFailed(const QString &path);
     void videoSinkChanged();
+    void glFrameSinkChanged();
+    void videoFrameReady(const QImage &image);
     void playingChanged();
     void positionChanged();
     void playbackFinished();
@@ -123,6 +129,7 @@ private:
     AVCodecHandler m_codec;
     FrameHandler  *m_frameHandler = nullptr;   // owned, child QObject
     QVideoSink    *m_videoSink    = nullptr;   // non-owning, from QML VideoOutput
+    QObject       *m_glFrameSink  = nullptr;   // non-owning, from QML OpenGLVideoItem
     QTimer         m_positionTimer;
     double         m_position     = 0.0;
     PlayerConfig  *m_config       = nullptr;   // owned, child QObject

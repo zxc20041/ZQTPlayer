@@ -84,6 +84,94 @@
             <source>Display Language</source>
             <translation>Display Language</translation>
         </message>
+        <message>
+            <source>Playback</source>
+            <translation>Playback</translation>
+        </message>
+        <message>
+            <source>Render Mode</source>
+            <translation>Render Mode</translation>
+        </message>
+        <message>
+            <source>QVideoSink (CPU)</source>
+            <translation>QVideoSink (CPU)</translation>
+        </message>
+        <message>
+            <source>OpenGL Texture</source>
+            <translation>OpenGL Texture</translation>
+        </message>
+        <message>
+            <source>Scaling Filter</source>
+            <translation>Scaling Filter</translation>
+        </message>
+        <message>
+            <source>Point</source>
+            <translation>Point</translation>
+        </message>
+        <message>
+            <source>Fast Bilinear</source>
+            <translation>Fast Bilinear</translation>
+        </message>
+        <message>
+            <source>Bilinear</source>
+            <translation>Bilinear</translation>
+        </message>
+        <message>
+            <source>Bicubic</source>
+            <translation>Bicubic</translation>
+        </message>
+        <message>
+            <source>Lanczos</source>
+            <translation>Lanczos</translation>
+        </message>
+        <message>
+            <source>Real-time seek preview</source>
+            <translation>Real-time seek preview</translation>
+        </message>
+        <message>
+            <source>Decode Backend</source>
+            <translation>Decode Backend</translation>
+        </message>
+        <message>
+            <source>Software</source>
+            <translation>Software</translation>
+        </message>
+        <message>
+            <source>Auto Hardware</source>
+            <translation>Auto Hardware</translation>
+        </message>
+        <message>
+            <source>D3D11VA</source>
+            <translation>D3D11VA</translation>
+        </message>
+        <message>
+            <source>VAAPI</source>
+            <translation>VAAPI</translation>
+        </message>
+        <message>
+            <source>VideoToolbox</source>
+            <translation>VideoToolbox</translation>
+        </message>
+        <message>
+            <source>Prefer zero-copy</source>
+            <translation>Prefer zero-copy</translation>
+        </message>
+        <message>
+            <source>Allow hardware decode fallback</source>
+            <translation>Allow hardware decode fallback</translation>
+        </message>
+        <message>
+            <source>OpenGL Flip X</source>
+            <translation>OpenGL Flip X</translation>
+        </message>
+        <message>
+            <source>OpenGL Flip Y</source>
+            <translation>OpenGL Flip Y</translation>
+        </message>
+        <message>
+            <source>OpenGL Lock Aspect Ratio</source>
+            <translation>OpenGL Lock Aspect Ratio</translation>
+        </message>
     </context>
     <context>
         <name>MediaInfoDialog</name>

@@ -29,6 +29,18 @@ class PlayerConfig : public QObject
     /// Enable throttled real-time seek while dragging the progress slider.
     Q_PROPERTY(bool realtimeSeekPreview READ realtimeSeekPreview WRITE setRealtimeSeekPreview NOTIFY realtimeSeekPreviewChanged)
 
+    // ── Decode backend (future HW decode) ──
+    Q_PROPERTY(int decodeBackend READ decodeBackendInt WRITE setDecodeBackendInt NOTIFY decodeBackendChanged)
+
+    // ── Hardware decode options (future use) ──
+    Q_PROPERTY(bool preferZeroCopy READ preferZeroCopy WRITE setPreferZeroCopy NOTIFY preferZeroCopyChanged)
+    Q_PROPERTY(bool allowHwFallback READ allowHwFallback WRITE setAllowHwFallback NOTIFY allowHwFallbackChanged)
+
+    // ── OpenGL presentation options ──
+    Q_PROPERTY(bool videoFlipX READ videoFlipX WRITE setVideoFlipX NOTIFY videoFlipXChanged)
+    Q_PROPERTY(bool videoFlipY READ videoFlipY WRITE setVideoFlipY NOTIFY videoFlipYChanged)
+    Q_PROPERTY(bool lockAspectRatio READ lockAspectRatio WRITE setLockAspectRatio NOTIFY lockAspectRatioChanged)
+
 public:
     explicit PlayerConfig(QObject *parent = nullptr);
 
@@ -62,12 +74,40 @@ public:
     bool realtimeSeekPreview() const;
     void setRealtimeSeekPreview(bool enabled);
 
+    // ── Decode backend ──
+    VideoDecodeBackend decodeBackend() const;
+    void setDecodeBackend(VideoDecodeBackend backend);
+    int  decodeBackendInt() const;
+    void setDecodeBackendInt(int backend);
+
+    // ── Hardware decode options ──
+    bool preferZeroCopy() const;
+    void setPreferZeroCopy(bool enabled);
+
+    bool allowHwFallback() const;
+    void setAllowHwFallback(bool enabled);
+
+    bool videoFlipX() const;
+    void setVideoFlipX(bool enabled);
+
+    bool videoFlipY() const;
+    void setVideoFlipY(bool enabled);
+
+    bool lockAspectRatio() const;
+    void setLockAspectRatio(bool enabled);
+
 signals:
     void volumeChanged();
     void mutedChanged();
     void renderModeChanged();
     void swsFilterChanged();
     void realtimeSeekPreviewChanged();
+    void decodeBackendChanged();
+    void preferZeroCopyChanged();
+    void allowHwFallbackChanged();
+    void videoFlipXChanged();
+    void videoFlipYChanged();
+    void lockAspectRatioChanged();
 
 private:
     int              m_volume     = 80;
@@ -75,4 +115,10 @@ private:
     VideoRenderMode  m_renderMode = VideoRenderMode::QVideoSink;
     SwsFilterMode    m_swsFilter  = SwsFilterMode::Bilinear;
     bool             m_realtimeSeekPreview = true;
+    VideoDecodeBackend m_decodeBackend = VideoDecodeBackend::Software;
+    bool             m_preferZeroCopy = true;
+    bool             m_allowHwFallback = true;
+    bool             m_videoFlipX = false;
+    bool             m_videoFlipY = false;
+    bool             m_lockAspectRatio = true;
 };
