@@ -36,6 +36,7 @@ class PlayerWindowManager : public QObject
     Q_PROPERTY(double bitRate        READ bitRate        NOTIFY mediaChanged)
     Q_PROPERTY(QString videoCodec    READ videoCodec     NOTIFY mediaChanged)
     Q_PROPERTY(QString audioCodec    READ audioCodec     NOTIFY mediaChanged)
+    Q_PROPERTY(QString decodePath    READ decodePath     NOTIFY mediaChanged)
     Q_PROPERTY(double frameRate      READ frameRate      NOTIFY mediaChanged)
     Q_PROPERTY(int    sampleRate     READ sampleRate     NOTIFY mediaChanged)
     Q_PROPERTY(int    audioChannels  READ audioChannels  NOTIFY mediaChanged)
@@ -100,6 +101,7 @@ public:
     double  bitRate() const;
     QString videoCodec() const;
     QString audioCodec() const;
+    QString decodePath() const;
     double  frameRate() const;
     int     sampleRate() const;
     int     audioChannels() const;

@@ -12,6 +12,8 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
     , m_config(new PlayerConfig(this))         // owned as child QObject
 {
     m_codec.setFrameHandler(m_frameHandler);
+    m_codec.setDecodeBackend(m_config->decodeBackend());
+    m_codec.setAllowHwFallback(m_config->allowHwFallback());
 
     m_frameHandler->setVideoRenderMode(m_config->renderMode());
     m_frameHandler->setSwsFilter(m_config->swsFilter());
@@ -34,6 +36,14 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
 
     connect(m_config, &PlayerConfig::swsFilterChanged, this, [this]() {
         m_frameHandler->setSwsFilter(m_config->swsFilter());
+    });
+
+    connect(m_config, &PlayerConfig::decodeBackendChanged, this, [this]() {
+        m_codec.setDecodeBackend(m_config->decodeBackend());
+    });
+
+    connect(m_config, &PlayerConfig::allowHwFallbackChanged, this, [this]() {
+        m_codec.setAllowHwFallback(m_config->allowHwFallback());
     });
 
     connect(m_frameHandler, &FrameHandler::videoFrameReady, this, [this](const QImage &image) {
@@ -108,7 +118,8 @@ void PlayerWindowManager::openMediaAsync(const QString &localPath)
                      << "resolution:" << m_codec.videoResolution()
                      << "duration:" << m_codec.durationSeconds() << "s"
                      << "video:" << m_codec.videoCodecName()
-                     << "audio:" << m_codec.audioCodecName();
+                     << "audio:" << m_codec.audioCodecName()
+                     << "decodePath:" << m_codec.decodeRuntimeStatus();
 
             emit mediaChanged();
 
@@ -322,6 +333,12 @@ QString PlayerWindowManager::videoCodec() const
 QString PlayerWindowManager::audioCodec() const
 {
     return m_codec.audioCodecName();
+}
+
+QString PlayerWindowManager::decodePath() const
+{
+    const QString status = m_codec.decodeRuntimeStatus();
+    return status.isEmpty() ? QStringLiteral("-") : status;
 }
 
 double PlayerWindowManager::frameRate() const

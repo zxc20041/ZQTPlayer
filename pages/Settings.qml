@@ -283,12 +283,6 @@ Page {
                     }
 
                     Switch {
-                        text: qsTr("Prefer zero-copy")
-                        checked: playerConfig.preferZeroCopy
-                        onToggled: playerConfig.preferZeroCopy = checked
-                    }
-
-                    Switch {
                         text: qsTr("Allow hardware decode fallback")
                         checked: playerConfig.allowHwFallback
                         onToggled: playerConfig.allowHwFallback = checked

@@ -4,6 +4,19 @@
 #include <chrono>
 #include <limits>
 
+extern "C" {
+#include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
+}
+
+namespace {
+inline const char *safePixFmtName(AVPixelFormat fmt)
+{
+    const char *name = av_get_pix_fmt_name(fmt);
+    return name ? name : "unknown";
+}
+}
+
 AVCodecHandler::AVCodecHandler() = default;
 
 AVCodecHandler::~AVCodecHandler()
@@ -32,7 +45,7 @@ QString AVCodecHandler::filePath() const
 bool AVCodecHandler::open()
 {
     if (m_filePath.isEmpty()) {
-        qWarning() << "AVCodecHandler::open() – file path is empty";
+        qWarning() << "AVCodecHandler::open() - file path is empty";
         return false;
     }
 
@@ -107,10 +120,17 @@ void AVCodecHandler::close()
         avformat_close_input(&m_formatCtx);
         m_formatCtx = nullptr;
     }
+    if (m_hwDeviceCtx) {
+        av_buffer_unref(&m_hwDeviceCtx);
+        m_hwDeviceCtx = nullptr;
+    }
     m_videoStreamIdx = -1;
     m_audioStreamIdx = -1;
     m_seekTargetUs = -1;
     m_waitKeyFrameAfterSeek = false;
+    m_hwPixFmt = AV_PIX_FMT_NONE;
+    m_hwDecodeActive = false;
+    m_decodeRuntimeStatus = "Software";
 }
 
 bool AVCodecHandler::isOpen() const
@@ -214,7 +234,7 @@ AVCodecContext *AVCodecHandler::audioCodecContext() const
 void AVCodecHandler::play()
 {
     if (!isOpen()) {
-        qWarning() << "AVCodecHandler::play() – not open";
+        qWarning() << "AVCodecHandler::play() - not open";
         return;
     }
     const AVPlayerStatus oldStatus = m_status.load();
@@ -236,7 +256,8 @@ void AVCodecHandler::play()
 
     // Restart from beginning only when replaying after EOF.
     // For normal play-after-seek, keep the current demux position.
-    if (oldStatus == AVPlayerStatus::EndOfFile ||
+    if (oldStatus == AVPlayerStatus::Stopped ||
+        oldStatus == AVPlayerStatus::EndOfFile ||
         oldStatus == AVPlayerStatus::PlaybackDone) {
         std::lock_guard formatLock(m_formatMutex);
         av_seek_frame(m_formatCtx, -1, 0, AVSEEK_FLAG_BACKWARD);
@@ -247,9 +268,14 @@ void AVCodecHandler::play()
     // Initialise FrameHandler contexts
     if (m_frameHandler) {
         if (m_videoCodecCtx) {
+            AVPixelFormat renderPixFmt = m_videoCodecCtx->pix_fmt;
+            if (m_hwDecodeActive && m_videoCodecCtx->sw_pix_fmt != AV_PIX_FMT_NONE) {
+                renderPixFmt = m_videoCodecCtx->sw_pix_fmt;
+            }
+
             m_frameHandler->initVideo(m_videoCodecCtx->width,
                                       m_videoCodecCtx->height,
-                                      m_videoCodecCtx->pix_fmt);
+                                      renderPixFmt);
         }
         if (m_audioCodecCtx) {
             AVRational audioTb = m_formatCtx->streams[m_audioStreamIdx]->time_base;
@@ -289,7 +315,7 @@ void AVCodecHandler::stop()
 {
     if (m_status == AVPlayerStatus::Stopped) return;
 
-    qDebug() << "AVCodecHandler::stop() – begin";
+    qDebug() << "AVCodecHandler::stop() - begin";
     m_abortRequested = true;
 
     // Unblock paused threads first
@@ -319,7 +345,7 @@ void AVCodecHandler::stop()
     m_status = AVPlayerStatus::Stopped;
     m_seekTargetUs = -1;
     m_waitKeyFrameAfterSeek = false;
-    qDebug() << "AVCodecHandler::stop() – done";
+    qDebug() << "AVCodecHandler::stop() - done";
 }
 
 bool AVCodecHandler::seek(double seconds)
@@ -350,6 +376,7 @@ bool AVCodecHandler::seek(double seconds)
     // For paused realtime preview, disable the gate so preview can refresh
     // frequently instead of waiting for the next IDR interval.
     m_waitKeyFrameAfterSeek = (st != AVPlayerStatus::Paused);
+    m_logFirstFrameAfterSeek = true;
 
     if (st == AVPlayerStatus::Paused && m_videoCodecCtx && m_frameHandler) {
         decodePreviewFrameFromCurrentPos();
@@ -357,6 +384,21 @@ bool AVCodecHandler::seek(double seconds)
 
     m_seekTargetUs = -1;
     return true;
+}
+
+void AVCodecHandler::setDecodeBackend(VideoDecodeBackend backend)
+{
+    m_decodeBackend = backend;
+}
+
+void AVCodecHandler::setAllowHwFallback(bool allow)
+{
+    m_allowHwFallback = allow;
+}
+
+QString AVCodecHandler::decodeRuntimeStatus() const
+{
+    return m_decodeRuntimeStatus;
 }
 
 AVPlayerStatus AVCodecHandler::status() const
@@ -377,13 +419,13 @@ void AVCodecHandler::startThreads()
 
 void AVCodecHandler::joinThreads()
 {
-    qDebug() << "AVCodecHandler::joinThreads – waiting...";
+    qDebug() << "AVCodecHandler::joinThreads - waiting...";
     if (m_demuxThread.joinable())       m_demuxThread.join();
-    qDebug() << "AVCodecHandler::joinThreads – demux joined";
+    qDebug() << "AVCodecHandler::joinThreads - demux joined";
     if (m_videoDecodeThread.joinable()) m_videoDecodeThread.join();
-    qDebug() << "AVCodecHandler::joinThreads – video joined";
+    qDebug() << "AVCodecHandler::joinThreads - video joined";
     if (m_audioDecodeThread.joinable()) m_audioDecodeThread.join();
-    qDebug() << "AVCodecHandler::joinThreads – all joined";
+    qDebug() << "AVCodecHandler::joinThreads - all joined";
 }
 
 void AVCodecHandler::waitIfPaused()
@@ -424,7 +466,7 @@ void AVCodecHandler::demuxLoop()
 
     av_packet_free(&pkt);
 
-    qDebug() << "AVCodecHandler::demuxLoop – exiting, signalling EOF to queues";
+    qDebug() << "AVCodecHandler::demuxLoop - exiting, signalling EOF to queues";
 
     // Signal decode threads that no more packets are coming.
     // Use signalEOF() instead of abort() so they can drain the remaining
@@ -462,21 +504,50 @@ void AVCodecHandler::videoDecodeLoop()
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
             if (ret < 0) break;
 
-            if (m_waitKeyFrameAfterSeek.load() && !(frame->flags & AV_FRAME_FLAG_KEY)) {
+            AVFrame *renderFrame = frame;
+            AVFrame *swFrame = nullptr;
+
+            if (m_hwDecodeActive && frame->format == m_hwPixFmt) {
+                swFrame = av_frame_alloc();
+                if (!swFrame) {
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                if (av_hwframe_transfer_data(swFrame, frame, 0) < 0) {
+                    av_frame_free(&swFrame);
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                swFrame->pts = frame->pts;
+                swFrame->pkt_dts = frame->pkt_dts;
+                swFrame->best_effort_timestamp = frame->best_effort_timestamp;
+                swFrame->flags = frame->flags;
+                renderFrame = swFrame;
+            }
+
+            if (m_waitKeyFrameAfterSeek.load() && !(renderFrame->flags & AV_FRAME_FLAG_KEY)) {
+                if (swFrame) {
+                    av_frame_free(&swFrame);
+                }
                 av_frame_unref(frame);
                 continue;
             }
 
-            if (m_waitKeyFrameAfterSeek.load() && (frame->flags & AV_FRAME_FLAG_KEY)) {
+            if (m_waitKeyFrameAfterSeek.load() && (renderFrame->flags & AV_FRAME_FLAG_KEY)) {
                 m_waitKeyFrameAfterSeek = false;
             }
 
             const int64_t seekTargetUs = m_seekTargetUs.load();
-            if (seekTargetUs >= 0 && frame->pts != AV_NOPTS_VALUE) {
+            if (seekTargetUs >= 0 && renderFrame->pts != AV_NOPTS_VALUE) {
                 AVRational tb = m_formatCtx->streams[m_videoStreamIdx]->time_base;
-                const int64_t frameUs = av_rescale_q(frame->pts, tb, AVRational{1, AV_TIME_BASE});
+                const int64_t frameUs = av_rescale_q(renderFrame->pts, tb, AVRational{1, AV_TIME_BASE});
 
                 if (frameUs + 100000 < seekTargetUs) {
+                    if (swFrame) {
+                        av_frame_free(&swFrame);
+                    }
                     av_frame_unref(frame);
                     continue;
                 }
@@ -488,9 +559,9 @@ void AVCodecHandler::videoDecodeLoop()
             }
 
             // ── PTS-based sync: pace video frames to audio clock ──
-            if (m_frameHandler && frame->pts != AV_NOPTS_VALUE) {
+            if (m_frameHandler && renderFrame->pts != AV_NOPTS_VALUE) {
                 AVRational tb = m_formatCtx->streams[m_videoStreamIdx]->time_base;
-                double videoPts = frame->pts * av_q2d(tb);
+                double videoPts = renderFrame->pts * av_q2d(tb);
 
                 // Sync to audio clock when audio stream is present
                 if (m_audioCodecCtx) {
@@ -515,7 +586,20 @@ void AVCodecHandler::videoDecodeLoop()
             }
 
             if (m_frameHandler)
-                m_frameHandler->processVideoFrame(frame);
+                m_frameHandler->processVideoFrame(renderFrame);
+
+            bool expected = true;
+            if (m_logFirstFrameAfterSeek.compare_exchange_strong(expected, false)) {
+                const AVPixelFormat outFmt = static_cast<AVPixelFormat>(renderFrame->format);
+                qDebug() << "Seek first frame -> fmt:" << safePixFmtName(outFmt)
+                         << "hwActive:" << m_hwDecodeActive
+                         << "key:" << bool(renderFrame->flags & AV_FRAME_FLAG_KEY)
+                         << "pts:" << renderFrame->pts;
+            }
+
+            if (swFrame) {
+                av_frame_free(&swFrame);
+            }
 
             av_frame_unref(frame);
         }
@@ -534,13 +618,50 @@ void AVCodecHandler::videoDecodeLoop()
                 ret = avcodec_receive_frame(m_videoCodecCtx, frame);
             }
             if (ret != 0) break;
+
+            AVFrame *renderFrame = frame;
+            AVFrame *swFrame = nullptr;
+
+            if (m_hwDecodeActive && frame->format == m_hwPixFmt) {
+                swFrame = av_frame_alloc();
+                if (!swFrame) {
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                if (av_hwframe_transfer_data(swFrame, frame, 0) < 0) {
+                    av_frame_free(&swFrame);
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                swFrame->pts = frame->pts;
+                swFrame->pkt_dts = frame->pkt_dts;
+                swFrame->best_effort_timestamp = frame->best_effort_timestamp;
+                swFrame->flags = frame->flags;
+                renderFrame = swFrame;
+            }
+
             if (m_frameHandler)
-                m_frameHandler->processVideoFrame(frame);
+                m_frameHandler->processVideoFrame(renderFrame);
+
+            bool expected = true;
+            if (m_logFirstFrameAfterSeek.compare_exchange_strong(expected, false)) {
+                const AVPixelFormat outFmt = static_cast<AVPixelFormat>(renderFrame->format);
+                qDebug() << "Seek first frame -> fmt:" << safePixFmtName(outFmt)
+                         << "hwActive:" << m_hwDecodeActive
+                         << "key:" << bool(renderFrame->flags & AV_FRAME_FLAG_KEY)
+                         << "pts:" << renderFrame->pts;
+            }
+
+            if (swFrame) {
+                av_frame_free(&swFrame);
+            }
             av_frame_unref(frame);
         }
     }
 
-    qDebug() << "AVCodecHandler::videoDecodeLoop – exiting";
+    qDebug() << "AVCodecHandler::videoDecodeLoop - exiting";
     av_frame_free(&frame);
     if (m_activeDecodeThreads.fetch_sub(1) == 1) {
         // Last decode thread to finish → signal PlaybackDone
@@ -629,7 +750,7 @@ void AVCodecHandler::audioDecodeLoop()
         }
     }
 
-    qDebug() << "AVCodecHandler::audioDecodeLoop – exiting";
+    qDebug() << "AVCodecHandler::audioDecodeLoop - exiting";
     av_frame_free(&frame);
     if (m_activeDecodeThreads.fetch_sub(1) == 1) {
         // Last decode thread to finish → signal PlaybackDone
@@ -737,11 +858,37 @@ bool AVCodecHandler::decodePreviewFrameFromCurrentPos()
                 }
             }
 
+            AVFrame *renderFrame = frame;
+            AVFrame *swFrame = nullptr;
+            if (m_hwDecodeActive && frame->format == m_hwPixFmt) {
+                swFrame = av_frame_alloc();
+                if (!swFrame) {
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                if (av_hwframe_transfer_data(swFrame, frame, 0) < 0) {
+                    av_frame_free(&swFrame);
+                    av_frame_unref(frame);
+                    continue;
+                }
+
+                swFrame->pts = frame->pts;
+                swFrame->pkt_dts = frame->pkt_dts;
+                swFrame->best_effort_timestamp = frame->best_effort_timestamp;
+                swFrame->flags = frame->flags;
+                renderFrame = swFrame;
+            }
+
             // Preview path: output first decodable frame near target.
             m_waitKeyFrameAfterSeek = false;
 
             if (m_frameHandler)
-                m_frameHandler->processVideoFrame(frame);
+                m_frameHandler->processVideoFrame(renderFrame);
+
+            if (swFrame) {
+                av_frame_free(&swFrame);
+            }
 
             av_frame_unref(frame);
             gotFrame = true;
@@ -776,6 +923,24 @@ bool AVCodecHandler::openCodec(int streamIndex, AVCodecContext **outCtx)
         return false;
     }
 
+    if (streamIndex == m_videoStreamIdx) {
+        m_hwDecodeActive = false;
+        m_hwPixFmt = AV_PIX_FMT_NONE;
+
+        if (m_decodeBackend != VideoDecodeBackend::Software) {
+            const bool hwReady = trySetupHardwareDecode(codec, ctx);
+            if (!hwReady && !m_allowHwFallback) {
+                qWarning() << "Hardware decode requested without fallback, but init failed.";
+                avcodec_free_context(&ctx);
+                return false;
+            }
+
+            if (!hwReady) {
+                m_decodeRuntimeStatus = "Software(Fallback)";
+            }
+        }
+    }
+
     if (avcodec_open2(ctx, codec, nullptr) < 0) {
         avcodec_free_context(&ctx);
         return false;
@@ -783,4 +948,94 @@ bool AVCodecHandler::openCodec(int streamIndex, AVCodecContext **outCtx)
 
     *outCtx = ctx;
     return true;
+}
+
+bool AVCodecHandler::trySetupHardwareDecode(const AVCodec *codec, AVCodecContext *ctx)
+{
+    if (!codec || !ctx) return false;
+
+    AVHWDeviceType candidates[6] = {
+#ifdef _WIN32
+        AV_HWDEVICE_TYPE_D3D11VA,
+        AV_HWDEVICE_TYPE_DXVA2,
+#endif
+#ifdef __linux__
+        AV_HWDEVICE_TYPE_VAAPI,
+#endif
+#ifdef __APPLE__
+        AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
+#endif
+        AV_HWDEVICE_TYPE_NONE,
+        AV_HWDEVICE_TYPE_NONE
+    };
+
+    if (m_decodeBackend == VideoDecodeBackend::D3D11VA) {
+        candidates[0] = AV_HWDEVICE_TYPE_D3D11VA;
+        candidates[1] = AV_HWDEVICE_TYPE_NONE;
+    } else if (m_decodeBackend == VideoDecodeBackend::VAAPI) {
+        candidates[0] = AV_HWDEVICE_TYPE_VAAPI;
+        candidates[1] = AV_HWDEVICE_TYPE_NONE;
+    } else if (m_decodeBackend == VideoDecodeBackend::VideoToolbox) {
+        candidates[0] = AV_HWDEVICE_TYPE_VIDEOTOOLBOX;
+        candidates[1] = AV_HWDEVICE_TYPE_NONE;
+    }
+
+    for (int ci = 0; ci < 6 && candidates[ci] != AV_HWDEVICE_TYPE_NONE; ++ci) {
+        AVHWDeviceType devType = candidates[ci];
+
+        AVPixelFormat hwPixFmt = AV_PIX_FMT_NONE;
+        for (int i = 0;; ++i) {
+            const AVCodecHWConfig *config = avcodec_get_hw_config(codec, i);
+            if (!config) break;
+            if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) &&
+                config->device_type == devType) {
+                hwPixFmt = config->pix_fmt;
+                break;
+            }
+        }
+        if (hwPixFmt == AV_PIX_FMT_NONE)
+            continue;
+
+        AVBufferRef *deviceRef = nullptr;
+        if (av_hwdevice_ctx_create(&deviceRef, devType, nullptr, nullptr, 0) < 0 || !deviceRef)
+            continue;
+
+        if (m_hwDeviceCtx) {
+            av_buffer_unref(&m_hwDeviceCtx);
+        }
+        m_hwDeviceCtx = deviceRef;
+        m_hwPixFmt = hwPixFmt;
+
+        ctx->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
+        ctx->opaque = this;
+        ctx->get_format = &AVCodecHandler::getHardwareFormat;
+        m_hwDecodeActive = true;
+
+        const char *devName = av_hwdevice_get_type_name(devType);
+        const QString dev = devName ? QString::fromUtf8(devName) : QStringLiteral("HW");
+        m_decodeRuntimeStatus = dev + QStringLiteral("->Transfer");
+
+        qDebug() << "Hardware decode enabled:" << av_hwdevice_get_type_name(devType)
+                 << "pix_fmt:" << av_get_pix_fmt_name(m_hwPixFmt);
+        return true;
+    }
+
+    m_hwDecodeActive = false;
+    m_hwPixFmt = AV_PIX_FMT_NONE;
+    m_decodeRuntimeStatus = "Software";
+    return false;
+}
+
+enum AVPixelFormat AVCodecHandler::getHardwareFormat(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts)
+{
+    auto *self = static_cast<AVCodecHandler *>(ctx->opaque);
+    if (self && self->m_hwPixFmt != AV_PIX_FMT_NONE) {
+        for (const enum AVPixelFormat *p = pix_fmts; p && *p != AV_PIX_FMT_NONE; ++p) {
+            if (*p == self->m_hwPixFmt) {
+                return *p;
+            }
+        }
+    }
+
+    return pix_fmts[0];
 }

@@ -18,6 +18,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/avutil.h>
+#include <libavutil/hwcontext.h>
 }
 
 /// @brief Manages FFmpeg demuxing + codec context + decode threads for a single
@@ -63,6 +64,11 @@ public:
     /// If currently playing/paused, playback is restarted from target position.
     bool seek(double seconds);
 
+    // ── Decode backend options ──
+    void setDecodeBackend(VideoDecodeBackend backend);
+    void setAllowHwFallback(bool allow);
+    QString decodeRuntimeStatus() const;
+
     AVPlayerStatus status() const;
 
     // ── Stream metadata (valid after open()) ──
@@ -107,6 +113,8 @@ private:
     bool openCodec(int streamIndex, AVCodecContext **outCtx);
     bool performSeekInternal(int64_t targetTs);
     bool decodePreviewFrameFromCurrentPos();
+    bool trySetupHardwareDecode(const AVCodec *codec, AVCodecContext *ctx);
+    static enum AVPixelFormat getHardwareFormat(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts);
 
     // ── Thread entry points (run on worker threads) ──
     void demuxLoop();        ///< Read packets from container → push into queues
@@ -144,6 +152,17 @@ private:
     std::atomic<int>  m_activeDecodeThreads{0}; ///< counts running decode threads
     std::atomic<int64_t> m_seekTargetUs{-1};    ///< pending seek target (microseconds), -1 when inactive
     std::atomic<bool> m_waitKeyFrameAfterSeek{false};
+    std::atomic<bool> m_logFirstFrameAfterSeek{false};
+
+    // ── Decode backend options ──
+    VideoDecodeBackend m_decodeBackend = VideoDecodeBackend::Software;
+    bool               m_allowHwFallback = true;
+
+    // ── Hardware decode state ──
+    AVBufferRef       *m_hwDeviceCtx = nullptr;
+    AVPixelFormat      m_hwPixFmt = AV_PIX_FMT_NONE;
+    bool               m_hwDecodeActive = false;
+    QString            m_decodeRuntimeStatus = "Software";
 
     // ── Members: frame handler ──
     FrameHandler *m_frameHandler = nullptr;

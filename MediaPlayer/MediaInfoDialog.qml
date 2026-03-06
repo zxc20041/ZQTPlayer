@@ -49,6 +49,9 @@ Dialog {
             Label { text: qsTr("Codec") }
             Label { text: root.manager.hasMedia ? root.manager.videoCodec : "-" }
 
+            Label { text: qsTr("Decode Path") }
+            Label { text: root.manager.hasMedia ? root.manager.decodePath : "-" }
+
             Label { text: qsTr("Frame Rate") }
             Label { text: root.manager.hasMedia ? root.manager.frameRate.toFixed(2) + " fps" : "-" }
 

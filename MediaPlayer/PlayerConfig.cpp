@@ -16,7 +16,8 @@ PlayerConfig::PlayerConfig(QObject *parent)
     m_realtimeSeekPreview = settings.value("player/realtimeSeekPreview", m_realtimeSeekPreview).toBool();
     m_decodeBackend = static_cast<VideoDecodeBackend>(
         settings.value("player/decodeBackend", static_cast<int>(m_decodeBackend)).toInt());
-    m_preferZeroCopy = settings.value("player/preferZeroCopy", m_preferZeroCopy).toBool();
+    m_preferZeroCopy = true;
+    settings.setValue("player/preferZeroCopy", true);
     m_allowHwFallback = settings.value("player/allowHwFallback", m_allowHwFallback).toBool();
     m_videoFlipX = settings.value("player/videoFlipX", m_videoFlipX).toBool();
     m_videoFlipY = settings.value("player/videoFlipY", m_videoFlipY).toBool();
@@ -151,9 +152,10 @@ bool PlayerConfig::preferZeroCopy() const
 
 void PlayerConfig::setPreferZeroCopy(bool enabled)
 {
-    if (m_preferZeroCopy == enabled) return;
-    m_preferZeroCopy = enabled;
-    QSettings().setValue("player/preferZeroCopy", m_preferZeroCopy);
+    Q_UNUSED(enabled);
+    if (m_preferZeroCopy) return;
+    m_preferZeroCopy = true;
+    QSettings().setValue("player/preferZeroCopy", true);
     emit preferZeroCopyChanged();
 }
 

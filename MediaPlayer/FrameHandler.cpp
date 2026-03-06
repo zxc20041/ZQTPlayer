@@ -113,6 +113,13 @@ void FrameHandler::processVideoFrame(AVFrame *frame)
         return;
     }
 
+    const AVPixelFormat frameFmt = static_cast<AVPixelFormat>(frame->format);
+    if (frame->width != m_srcWidth || frame->height != m_srcHeight || frameFmt != m_srcPixFmt) {
+        if (!initVideo(frame->width, frame->height, frameFmt)) {
+            return;
+        }
+    }
+
     if (m_renderMode == VideoRenderMode::QVideoSink) {
         // ── Software path: deliver to QVideoSink ──
 
