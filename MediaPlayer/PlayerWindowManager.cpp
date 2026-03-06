@@ -7,6 +7,13 @@
 #include <QPointer>
 #include <cmath>
 
+namespace {
+bool isTerminalPlaybackState(AVPlayerStatus st)
+{
+    return st == AVPlayerStatus::EndOfFile || st == AVPlayerStatus::PlaybackDone;
+}
+}
+
 PlayerWindowManager::PlayerWindowManager(QObject *parent)
     : QObject(parent)
     , m_frameHandler(new FrameHandler(this))   // owned as child QObject
@@ -155,6 +162,19 @@ void PlayerWindowManager::play()
 {
     if (!m_codec.isOpen()) return;
 
+    const AVPlayerStatus st = m_codec.status();
+    if (isTerminalPlaybackState(st)) {
+        return;
+    }
+
+    if (m_tailToggleGuard && duration() > 0.0) {
+        const double nowPos = std::max(m_position, m_frameHandler->audioClock());
+        const double remain = duration() - nowPos;
+        if (remain <= 1.0) {
+            return;
+        }
+    }
+
     // Ensure the video sink is wired before starting threads
     if (m_videoSink)
         m_frameHandler->setVideoSink(m_videoSink);
@@ -169,6 +189,19 @@ void PlayerWindowManager::play()
 
 void PlayerWindowManager::pause()
 {
+    const AVPlayerStatus st = m_codec.status();
+    if (isTerminalPlaybackState(st)) {
+        return;
+    }
+
+    if (m_tailToggleGuard && duration() > 0.0) {
+        const double nowPos = std::max(m_position, m_frameHandler->audioClock());
+        const double remain = duration() - nowPos;
+        if (remain <= 1.0) {
+            return;
+        }
+    }
+
     m_codec.pause();
     m_positionTimer.stop();
     emit playingChanged();
@@ -185,7 +218,20 @@ void PlayerWindowManager::stop()
 
 void PlayerWindowManager::togglePlayPause()
 {
-    if (m_codec.status() == AVPlayerStatus::Playing) {
+    const AVPlayerStatus st = m_codec.status();
+    if (isTerminalPlaybackState(st)) {
+        return;
+    }
+
+    if (m_tailToggleGuard && duration() > 0.0) {
+        const double nowPos = std::max(m_position, m_frameHandler->audioClock());
+        const double remain = duration() - nowPos;
+        if (remain <= 1.0) {
+            return;
+        }
+    }
+
+    if (st == AVPlayerStatus::Playing) {
         pause();
     } else {
         play();

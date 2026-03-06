@@ -152,6 +152,7 @@ private:
     // Audio output (created on first processAudioFrame call)
     std::unique_ptr<QAudioSink> m_audioSink;
     QIODevice          *m_audioIO    = nullptr;   // non-owning, from QAudioSink::start()
+    std::mutex          m_audioMutex;             // guards m_audioSink/m_audioIO operations
 
     // Audio clock
     std::atomic<double> m_audioClock{0.0};

@@ -139,6 +139,7 @@ private:
     bool           m_seekUiHold   = false;
     double         m_seekUiTarget = 0.0;
     qint64         m_seekUiExpireMs = 0;
+    bool           m_tailToggleGuard = true;
 
     /// Async helper: runs AVCodecHandler::open() off the main thread
     void openMediaAsync(const QString &localPath);

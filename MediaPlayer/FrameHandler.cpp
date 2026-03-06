@@ -254,6 +254,7 @@ void FrameHandler::setVolume(qreal linearGain)
 
     // Apply to the QAudioSink immediately if it exists.
     // QAudioSink::setVolume() is thread-safe in Qt 6.
+    std::lock_guard<std::mutex> lock(m_audioMutex);
     if (m_audioSink)
         m_audioSink->setVolume(m_volume.load());
 }
@@ -318,10 +319,13 @@ void FrameHandler::cleanupAudio()
 
     // Destroy QAudioSink.  Always called from the main thread (after worker
     // threads have been joined), so no cross-thread bounce is needed.
-    if (m_audioSink) {
-        m_audioSink->stop();
-        m_audioSink.reset();
-        m_audioIO = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
+        if (m_audioSink) {
+            m_audioSink->stop();
+            m_audioSink.reset();
+            m_audioIO = nullptr;
+        }
     }
     if (m_swrCtx) {
         swr_free(&m_swrCtx);
@@ -340,7 +344,10 @@ void FrameHandler::processAudioFrame(AVFrame *frame)
 
     // Audio sink is created eagerly in initAudio() on the main thread.
     // If it doesn't exist here, we simply cannot output audio.
-    if (!m_audioSink || !m_audioIO) return;
+    {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
+        if (!m_audioSink || !m_audioIO) return;
+    }
 
     // Calculate output sample count
     int outSamples = swr_get_out_samples(m_swrCtx, frame->nb_samples);
@@ -365,7 +372,10 @@ void FrameHandler::processAudioFrame(AVFrame *frame)
     // buffered in milliseconds, making audioClock jump to the end instantly.
     // We check bytesFree() and sleep when the device buffer is full, so
     // the decode thread naturally runs at ≈1× playback speed.
-    if (m_audioIO && m_audioSink) {
+    {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
+        if (!(m_audioIO && m_audioSink)) return;
+
         const char *src = buffer.constData();
         int remaining = totalBytes;
         while (remaining > 0 && !m_audioAbort) {
@@ -411,6 +421,7 @@ double FrameHandler::audioClock() const
 void FrameHandler::pauseAudioOutput()
 {
     auto suspendSink = [this]() {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
         if (m_audioSink) {
             m_audioSink->suspend();
         }
@@ -426,6 +437,7 @@ void FrameHandler::pauseAudioOutput()
 void FrameHandler::resumeAudioOutput()
 {
     auto resumeSink = [this]() {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
         if (m_audioSink) {
             m_audioSink->resume();
         }
@@ -478,7 +490,10 @@ bool FrameHandler::ensureAudioSink()
 
 bool FrameHandler::createAudioSinkImpl()
 {
-    if (m_audioSink) return true;
+    {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
+        if (m_audioSink) return true;
+    }
 
     QAudioFormat format;
     format.setSampleRate(kOutSampleRate);
@@ -492,14 +507,17 @@ bool FrameHandler::createAudioSinkImpl()
         return false;
     }
 
-    m_audioSink = std::make_unique<QAudioSink>(defaultDev, format, this);
-    m_audioSink->setVolume(m_volume.load());
-    m_audioIO   = m_audioSink->start();
+    {
+        std::lock_guard<std::mutex> lock(m_audioMutex);
+        m_audioSink = std::make_unique<QAudioSink>(defaultDev, format, this);
+        m_audioSink->setVolume(m_volume.load());
+        m_audioIO   = m_audioSink->start();
 
-    if (!m_audioIO) {
-        qWarning() << "FrameHandler::createAudioSinkImpl – QAudioSink::start() failed";
-        m_audioSink.reset();
-        return false;
+        if (!m_audioIO) {
+            qWarning() << "FrameHandler::createAudioSinkImpl – QAudioSink::start() failed";
+            m_audioSink.reset();
+            return false;
+        }
     }
 
     return true;
