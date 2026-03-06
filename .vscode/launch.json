@@ -46,7 +46,7 @@
           }
         ]
       },
-      "visualizerFile": "c:\\Users\\zxc\\AppData\\Roaming\\Code\\User\\workspaceStorage\\55ff0febb1a66784f4777492c43388cd\\tonka3000.qtvsctools\\qt.natvis.xml"
+      "visualizerFile": "/home/zxc/.config/Code/User/workspaceStorage/a5e04d3a0af9188ef5bb65cb816259de/tonka3000.qtvsctools/qt.natvis.xml"
     },
     {
       "name": "Debug ZQTPlayer (no build)",
@@ -92,7 +92,7 @@
           }
         ]
       },
-      "visualizerFile": "c:\\Users\\zxc\\AppData\\Roaming\\Code\\User\\workspaceStorage\\55ff0febb1a66784f4777492c43388cd\\tonka3000.qtvsctools\\qt.natvis.xml"
+      "visualizerFile": "/home/zxc/.config/Code/User/workspaceStorage/a5e04d3a0af9188ef5bb65cb816259de/tonka3000.qtvsctools/qt.natvis.xml"
     }
   ]
 }

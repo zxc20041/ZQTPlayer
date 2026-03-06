@@ -6,8 +6,10 @@
 #include <QVideoFrameFormat>
 #include <QAudioSink>
 #include <QAudioFormat>
+#include <QAudio>
 #include <QMediaDevices>
 #include <QThread>
+#include <QMetaObject>
 
 extern "C" {
 #include <libavutil/imgutils.h>
@@ -369,6 +371,11 @@ void FrameHandler::processAudioFrame(AVFrame *frame)
         while (remaining > 0 && !m_audioAbort) {
             int freeBytes = m_audioSink->bytesFree();
             if (freeBytes <= 0) {
+                // During pause, the sink is suspended and bytesFree may remain 0.
+                // Break so decode thread can reach waitIfPaused() promptly.
+                if (m_audioSink->state() != QAudio::ActiveState) {
+                    break;
+                }
                 // Buffer full — wait ~5 ms for the device to drain some data
                 QThread::usleep(5000);
                 continue;
@@ -399,6 +406,36 @@ void FrameHandler::processAudioFrame(AVFrame *frame)
 double FrameHandler::audioClock() const
 {
     return m_audioClock.load();
+}
+
+void FrameHandler::pauseAudioOutput()
+{
+    auto suspendSink = [this]() {
+        if (m_audioSink) {
+            m_audioSink->suspend();
+        }
+    };
+
+    if (QThread::currentThread() == thread()) {
+        suspendSink();
+    } else {
+        QMetaObject::invokeMethod(this, suspendSink, Qt::BlockingQueuedConnection);
+    }
+}
+
+void FrameHandler::resumeAudioOutput()
+{
+    auto resumeSink = [this]() {
+        if (m_audioSink) {
+            m_audioSink->resume();
+        }
+    };
+
+    if (QThread::currentThread() == thread()) {
+        resumeSink();
+    } else {
+        QMetaObject::invokeMethod(this, resumeSink, Qt::BlockingQueuedConnection);
+    }
 }
 
 // ════════════════════════════════════════════════════════════

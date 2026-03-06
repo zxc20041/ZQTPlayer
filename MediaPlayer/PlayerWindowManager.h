@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <QThread>
 #include <QDateTime>
+#include <QPointer>
 #include <QtQml/qqml.h>
 #include <QVideoSink>
 #include <QImage>
@@ -131,7 +132,7 @@ private:
     AVCodecHandler m_codec;
     FrameHandler  *m_frameHandler = nullptr;   // owned, child QObject
     QVideoSink    *m_videoSink    = nullptr;   // non-owning, from QML VideoOutput
-    QObject       *m_glFrameSink  = nullptr;   // non-owning, from QML OpenGLVideoItem
+    QPointer<QObject> m_glFrameSink;           // guarded, from QML OpenGLVideoItem
     QTimer         m_positionTimer;
     double         m_position     = 0.0;
     PlayerConfig  *m_config       = nullptr;   // owned, child QObject

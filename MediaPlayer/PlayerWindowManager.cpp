@@ -4,6 +4,7 @@
 #include <QUrl>
 #include <QDebug>
 #include <QVideoSink>
+#include <QPointer>
 #include <cmath>
 
 PlayerWindowManager::PlayerWindowManager(QObject *parent)
@@ -52,7 +53,7 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
                                       Q_ARG(QImage, image));
         }
         emit videoFrameReady(image);
-    }, Qt::DirectConnection);
+    }, Qt::QueuedConnection);
 }
 
 PlayerWindowManager::~PlayerWindowManager()
@@ -101,30 +102,38 @@ void PlayerWindowManager::openMedia(const QString &path)
 
 void PlayerWindowManager::openMediaAsync(const QString &localPath)
 {
+    QPointer<PlayerWindowManager> self(this);
+
     // Capture path by value; the lambda runs on a throwaway QThread.
-    QThread *worker = QThread::create([this, localPath]() {
-        m_codec.setFilePath(localPath);
-        bool ok = m_codec.open();
+    QThread *worker = QThread::create([self, localPath]() {
+        if (!self) return;
+
+        self->m_codec.setFilePath(localPath);
+        bool ok = self->m_codec.open();
+
+        if (!self) return;
 
         // Bounce back to the main / GUI thread for UI updates + play()
-        QMetaObject::invokeMethod(this, [this, ok, localPath]() {
+        QMetaObject::invokeMethod(self, [self, ok, localPath]() {
+            if (!self) return;
+
             if (!ok) {
                 qWarning() << "Failed to open media:" << localPath;
-                emit mediaOpenFailed(localPath);
+                emit self->mediaOpenFailed(localPath);
                 return;
             }
 
             qDebug() << "Opened media:" << localPath
-                     << "resolution:" << m_codec.videoResolution()
-                     << "duration:" << m_codec.durationSeconds() << "s"
-                     << "video:" << m_codec.videoCodecName()
-                     << "audio:" << m_codec.audioCodecName()
-                     << "decodePath:" << m_codec.decodeRuntimeStatus();
+                     << "resolution:" << self->m_codec.videoResolution()
+                     << "duration:" << self->m_codec.durationSeconds() << "s"
+                     << "video:" << self->m_codec.videoCodecName()
+                     << "audio:" << self->m_codec.audioCodecName()
+                     << "decodePath:" << self->m_codec.decodeRuntimeStatus();
 
-            emit mediaChanged();
+            emit self->mediaChanged();
 
             // Auto-play after successful open
-            play();
+            self->play();
         }, Qt::QueuedConnection);
     });
 
@@ -223,13 +232,26 @@ void PlayerWindowManager::setVideoSink(QVideoSink *sink)
 
 QObject *PlayerWindowManager::glFrameSink() const
 {
-    return m_glFrameSink;
+    return m_glFrameSink.data();
 }
 
 void PlayerWindowManager::setGlFrameSink(QObject *sink)
 {
-    if (m_glFrameSink == sink) return;
+    if (m_glFrameSink.data() == sink) return;
+
+    if (m_glFrameSink) {
+        disconnect(m_glFrameSink, &QObject::destroyed, this, nullptr);
+    }
+
     m_glFrameSink = sink;
+
+    if (m_glFrameSink) {
+        connect(m_glFrameSink, &QObject::destroyed, this, [this]() {
+            m_glFrameSink = nullptr;
+            emit glFrameSinkChanged();
+        });
+    }
+
     emit glFrameSinkChanged();
 }
 

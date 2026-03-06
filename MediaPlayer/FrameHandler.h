@@ -102,6 +102,12 @@ public:
     /// Current audio playback position in seconds (used as the master clock).
     double audioClock() const;
 
+    /// Pause audio device output immediately (used when playback pauses).
+    void pauseAudioOutput();
+
+    /// Resume audio device output (used when playback resumes).
+    void resumeAudioOutput();
+
     // ────────────────────────────────────────────────────────
     //  Lifecycle helpers
     // ────────────────────────────────────────────────────────

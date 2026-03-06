@@ -293,6 +293,11 @@ void AVCodecHandler::play()
 void AVCodecHandler::pause()
 {
     if (m_status != AVPlayerStatus::Playing) return;
+
+    if (m_frameHandler) {
+        m_frameHandler->pauseAudioOutput();
+    }
+
     {
         std::lock_guard lock(m_pauseMutex);
         m_paused = true;
@@ -303,10 +308,16 @@ void AVCodecHandler::pause()
 void AVCodecHandler::resume()
 {
     if (m_status != AVPlayerStatus::Paused) return;
+
     {
         std::lock_guard lock(m_pauseMutex);
         m_paused = false;
     }
+
+    if (m_frameHandler) {
+        m_frameHandler->resumeAudioOutput();
+    }
+
     m_pauseCond.notify_all();
     m_status = AVPlayerStatus::Playing;
 }
@@ -372,10 +383,10 @@ bool AVCodecHandler::seek(double seconds)
         return false;
     }
 
-    // Keyframe gate is useful for continuous playback path.
-    // For paused realtime preview, disable the gate so preview can refresh
-    // frequently instead of waiting for the next IDR interval.
-    m_waitKeyFrameAfterSeek = (st != AVPlayerStatus::Paused);
+    // Always gate video output on a keyframe immediately after seek.
+    // This avoids rendering corrupt predictive frames (notably HEVC on Linux)
+    // before decoder references are fully rebuilt.
+    m_waitKeyFrameAfterSeek = true;
     m_logFirstFrameAfterSeek = true;
 
     if (st == AVPlayerStatus::Paused && m_videoCodecCtx && m_frameHandler) {
@@ -880,7 +891,16 @@ bool AVCodecHandler::decodePreviewFrameFromCurrentPos()
                 renderFrame = swFrame;
             }
 
-            // Preview path: output first decodable frame near target.
+            // Preview path: only output keyframes to avoid transient corruption
+            // right after seek on long-GOP codecs (e.g. HEVC).
+            if (!(renderFrame->flags & AV_FRAME_FLAG_KEY)) {
+                if (swFrame) {
+                    av_frame_free(&swFrame);
+                }
+                av_frame_unref(frame);
+                continue;
+            }
+
             m_waitKeyFrameAfterSeek = false;
 
             if (m_frameHandler)
