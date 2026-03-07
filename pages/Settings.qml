@@ -61,7 +61,7 @@ Page {
             ListView {
                 id: categoryList
                 anchors.fill: parent
-                model: [qsTr("General")]
+                model: [qsTr("General"), qsTr("Video Playback")]
                 currentIndex: root.currentCategory
                 delegate: ItemDelegate {
                     width: categoryList.width
@@ -91,6 +91,7 @@ Page {
                 sourceComponent: {
                     switch (root.currentCategory) {
                     case 0: return generalSettings;
+                    case 1: return videoPlaybackSettings;
                     default: return generalSettings;
                     }
                 }
@@ -204,7 +205,24 @@ Page {
                 }
             }
 
-            // ---------- Playback ----------
+            // Spacer
+            Item {
+                Layout.fillHeight: true
+            }
+        }
+    }
+
+    // ── Video Playback Settings Component ──
+    Component {
+        id: videoPlaybackSettings
+
+        ColumnLayout {
+            spacing: 24
+            anchors.left: parent ? parent.left : undefined
+            anchors.right: parent ? parent.right : undefined
+            anchors.margins: 24
+            anchors.topMargin: 24
+
             GroupBox {
                 title: qsTr("Playback")
                 Layout.fillWidth: true
@@ -308,7 +326,6 @@ Page {
                 }
             }
 
-            // Spacer
             Item {
                 Layout.fillHeight: true
             }
