@@ -29,6 +29,29 @@ Page {
 
     // Currently selected category index
     property int currentCategory: 0
+    readonly property bool isWindows: Qt.platform.os === "windows"
+    readonly property bool isLinux: Qt.platform.os === "linux"
+    readonly property bool isMacOS: Qt.platform.os === "osx"
+    readonly property var decodeBackendOptions: [
+        { text: qsTr("Software"), value: 0, enabled: true },
+        { text: qsTr("Auto Hardware"), value: 1, enabled: true },
+        { text: qsTr("D3D11VA"), value: 2, enabled: root.isWindows },
+        { text: qsTr("VAAPI"), value: 3, enabled: root.isLinux },
+        { text: qsTr("VideoToolbox"), value: 4, enabled: root.isMacOS }
+    ]
+
+    function decodeBackendIndexForValue(value) {
+        for (let i = 0; i < decodeBackendOptions.length; ++i) {
+            if (decodeBackendOptions[i].value === value)
+                return i;
+        }
+        return 0;
+    }
+
+    function isDecodeBackendEnabled(value) {
+        const idx = decodeBackendIndexForValue(value);
+        return idx >= 0 && decodeBackendOptions[idx].enabled;
+    }
 
     header: ToolBar {
         RowLayout {
@@ -286,16 +309,30 @@ Page {
                         }
 
                         ComboBox {
-                            model: [
-                                qsTr("Software"),
-                                qsTr("Auto Hardware"),
-                                qsTr("D3D11VA"),
-                                qsTr("VAAPI"),
-                                qsTr("VideoToolbox")
-                            ]
-                            currentIndex: playerConfig.decodeBackend
+                            id: decodeBackendCombo
+                            model: root.decodeBackendOptions
+                            textRole: "text"
+                            currentIndex: root.decodeBackendIndexForValue(playerConfig.decodeBackend)
+                            Component.onCompleted: {
+                                if (!root.isDecodeBackendEnabled(playerConfig.decodeBackend)) {
+                                    playerConfig.decodeBackend = 0;
+                                }
+                            }
                             onActivated: function(index) {
-                                playerConfig.decodeBackend = index;
+                                const option = model[index];
+                                if (!option || !option.enabled)
+                                    return;
+                                playerConfig.decodeBackend = option.value;
+                            }
+
+                            delegate: ItemDelegate {
+                                required property var modelData
+                                width: decodeBackendCombo.width
+                                enabled: modelData.enabled
+                                opacity: enabled ? 1.0 : 0.45
+                                text: modelData.enabled
+                                      ? modelData.text
+                                      : modelData.text + qsTr(" (Unsupported on this platform)")
                             }
                         }
                     }
