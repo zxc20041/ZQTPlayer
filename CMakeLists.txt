@@ -62,6 +62,8 @@ qt_add_executable(ZQTPlayer
     MediaPlayer/PlayerConfig.h
     MediaPlayer/opengl/OpenGLVideoItem.cpp
     MediaPlayer/opengl/OpenGLVideoItem.h
+    MediaPlayer/rtx/RtxVsrClient.cpp
+    MediaPlayer/rtx/RtxVsrClient.h
 )
 
 qt_add_qml_module(ZQTPlayer
@@ -96,6 +98,8 @@ qt_add_qml_module(ZQTPlayer
         MediaPlayer/PlayerConfig.cpp
         MediaPlayer/opengl/OpenGLVideoItem.h
         MediaPlayer/opengl/OpenGLVideoItem.cpp
+        MediaPlayer/rtx/RtxVsrClient.h
+        MediaPlayer/rtx/RtxVsrClient.cpp
 )
 
 set_target_properties(ZQTPlayer PROPERTIES
@@ -116,6 +120,7 @@ target_include_directories(ZQTPlayer
         ${CMAKE_CURRENT_SOURCE_DIR}/pages
         ${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer
     ${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer/opengl
+    ${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer/rtx
         ${FFMPEG_INCLUDE_DIRS}
 )
 
@@ -125,3 +130,13 @@ qt_add_translations(ZQTPlayer
         i18n/app_en_US.ts
         i18n/app_zh_CN.ts
 )
+
+# Copy RTX bridge DLL to build output directory (Windows only)
+if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer/rtx/libs/rtx_hdr_vsr_bridge.dll")
+    add_custom_command(TARGET ZQTPlayer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/MediaPlayer/rtx/libs/rtx_hdr_vsr_bridge.dll"
+            "$<TARGET_FILE_DIR:ZQTPlayer>"
+        COMMENT "Copying rtx_hdr_vsr_bridge.dll to output directory"
+    )
+endif()

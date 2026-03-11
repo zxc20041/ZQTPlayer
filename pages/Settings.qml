@@ -360,6 +360,13 @@ Page {
                         checked: playerConfig.lockAspectRatio
                         onToggled: playerConfig.lockAspectRatio = checked
                     }
+
+                    Switch {
+                        visible: root.isWindows
+                        text: qsTr("RTX Video Super Resolution")
+                        checked: playerConfig.vsrEnabled
+                        onToggled: playerConfig.vsrEnabled = checked
+                    }
                 }
             }
 

@@ -10,6 +10,9 @@
 #include <QMediaDevices>
 #include <QThread>
 #include <QMetaObject>
+#include <QElapsedTimer>
+
+#include "rtx/RtxVsrClient.h"
 
 extern "C" {
 #include <libavutil/imgutils.h>
@@ -64,7 +67,7 @@ bool FrameHandler::initVideo(int srcWidth, int srcHeight, AVPixelFormat srcFmt)
     m_is10bit   = is10BitFormat(srcFmt);
 
     if (m_is10bit) {
-        qDebug() << "FrameHandler::initVideo – detected 10-bit source:"
+        qDebug() << "FrameHandler::initVideo - detected 10-bit source:"
                  << av_get_pix_fmt_name(srcFmt);
     }
 
@@ -88,7 +91,7 @@ bool FrameHandler::initVideo(int srcWidth, int srcHeight, AVPixelFormat srcFmt)
             toSwsFlags(m_swsFilter), nullptr, nullptr, nullptr);
 
         if (!m_swsCtx) {
-            qWarning() << "FrameHandler::initVideo – sws_getContext failed";
+            qWarning() << "FrameHandler::initVideo - sws_getContext failed";
             return false;
         }
     }
@@ -106,21 +109,42 @@ void FrameHandler::cleanupVideo()
     m_srcWidth  = 0;
     m_srcHeight = 0;
     m_srcPixFmt = AV_PIX_FMT_NONE;
+    resetVsrState();
 }
 
 void FrameHandler::processVideoFrame(AVFrame *frame)
 {
     if (!frame || m_audioAbort) {
-        if (m_audioAbort) qDebug() << "FrameHandler::processVideoFrame – aborted";
+        if (m_audioAbort) qDebug() << "FrameHandler::processVideoFrame - aborted";
         return;
     }
 
     const AVPixelFormat frameFmt = static_cast<AVPixelFormat>(frame->format);
     if (frame->width != m_srcWidth || frame->height != m_srcHeight || frameFmt != m_srcPixFmt) {
+        resetVsrState();
         if (!initVideo(frame->width, frame->height, frameFmt)) {
             return;
         }
     }
+
+    // ── RTX VSR path ──
+    if (m_vsrEnabled && !m_vsrInitFailed
+        && RtxVsrClient::supportsInputFormat(frameFmt)) {
+        if (tryProcessVsr(frame))
+            return;
+        // VSR failed this frame — fall through to legacy path
+        qDebug() << "FrameHandler: VSR frame failed, falling back to legacy";
+    } else if (m_vsrEnabled && !m_vsrInitFailed
+               && !RtxVsrClient::supportsInputFormat(frameFmt)) {
+        static bool sWarnedFmt = false;
+        if (!sWarnedFmt) {
+            qDebug() << "FrameHandler: VSR skipped – unsupported pixel format:"
+                     << av_get_pix_fmt_name(frameFmt);
+            sWarnedFmt = true;
+        }
+    }
+
+    // ── Legacy path (no VSR) ──
 
     if (m_renderMode == VideoRenderMode::QVideoSink) {
         // ── Software path: deliver to QVideoSink ──
@@ -204,7 +228,7 @@ void FrameHandler::processVideoFrame(AVFrame *frame)
         }
 
     } else {
-        // ── OpenGL path: emit raw frame as QImage (fallback until GL node exists) ──
+        // ── OpenGL path: emit raw frame as QImage ──
 
         if (!m_swsCtx) {
             m_swsCtx = sws_getContext(
@@ -225,6 +249,225 @@ void FrameHandler::processVideoFrame(AVFrame *frame)
 
         emit videoFrameReady(img);
     }
+}
+
+// ════════════════════════════════════════════════════════════
+//  RTX VSR
+// ════════════════════════════════════════════════════════════
+
+void FrameHandler::setVsrEnabled(bool enabled)
+{
+    const bool prev = m_vsrEnabled.exchange(enabled);
+    if (prev != enabled)
+        qDebug() << "FrameHandler: VSR" << (enabled ? "ENABLED" : "DISABLED");
+}
+
+bool FrameHandler::vsrEnabled() const
+{
+    return m_vsrEnabled;
+}
+
+void FrameHandler::setDisplaySize(const QSize &size)
+{
+    const int oldW = m_displayWidth.exchange(size.width());
+    const int oldH = m_displayHeight.exchange(size.height());
+    // If display size changed while VSR is active, force re-init on next frame
+    if (m_vsrEnabled && m_vsrClient && m_vsrClient->isInitialized()
+        && (oldW != size.width() || oldH != size.height())) {
+        resetVsrState();
+    }
+}
+
+void FrameHandler::preloadVsr()
+{
+#ifdef Q_OS_WIN
+    if (!m_vsrClient) {
+        m_vsrClient = std::make_unique<RtxVsrClient>();
+    }
+    if (!m_vsrClient->isLoaded()) {
+        if (m_vsrClient->load()) {
+            qDebug() << "FrameHandler: VSR bridge DLL pre-loaded successfully";
+        } else {
+            qDebug() << "FrameHandler: VSR bridge DLL pre-load failed:"
+                     << m_vsrClient->lastError();
+        }
+    }
+#endif
+}
+
+bool FrameHandler::tryProcessVsr(AVFrame *frame)
+{
+    QElapsedTimer totalTimer;
+    totalTimer.start();
+
+    if (!m_vsrClient) {
+        QElapsedTimer loadTimer;
+        loadTimer.start();
+        m_vsrClient = std::make_unique<RtxVsrClient>();
+        qDebug() << "VSR-TIMING: RtxVsrClient ctor:" << loadTimer.elapsed() << "ms";
+    }
+
+    if (!m_vsrClient->isInitialized()) {
+        // Determine output dimensions.
+        // In OpenGL mode the renderer handles aspect-ratio letterboxing itself
+        // via vertex scaling, so VSR should always output at source resolution —
+        // upscaling to display size would make the texture match the viewport
+        // exactly, defeating preserveAspectRatio.
+        // In QVideoSink mode, upscale to display size for true super-resolution.
+        int outW = frame->width;
+        int outH = frame->height;
+        const int dispW = m_displayWidth.load();
+        const int dispH = m_displayHeight.load();
+
+        if (m_renderMode == VideoRenderMode::OpenGLTexture) {
+            // OpenGL: always output at source size; the GPU letterboxes.
+            qDebug() << "FrameHandler: VSR (OpenGL) - source size:"
+                     << frame->width << "x" << frame->height
+                     << "(display:" << dispW << "x" << dispH << ")";
+        } else {
+            // QVideoSink: upscale when display > source
+            if (dispW > frame->width && dispH > frame->height) {
+                outW = dispW;
+                outH = dispH;
+                qDebug() << "FrameHandler: VSR super-resolution mode - src:"
+                         << frame->width << "x" << frame->height
+                         << "-> display:" << outW << "x" << outH;
+            } else {
+                qDebug() << "FrameHandler: VSR enhancement mode (display"
+                         << dispW << "x" << dispH
+                         << "<= src" << frame->width << "x" << frame->height << ")";
+            }
+        }
+
+        // Map FFmpeg pixel format → bridge DLL RtxPixelFormat enum
+        const AVPixelFormat ffFmt = static_cast<AVPixelFormat>(frame->format);
+        const int bridgePixFmt = (ffFmt == AV_PIX_FMT_P010LE) ? 1 /*P010*/ : 0 /*NV12*/;
+
+        qDebug() << "FrameHandler: VSR attempting init -"
+                 << frame->width << "x" << frame->height
+                 << "->" << outW << "x" << outH
+                 << "fmt:" << av_get_pix_fmt_name(ffFmt);
+
+        QElapsedTimer initTimer;
+        initTimer.start();
+        if (!m_vsrClient->initialize(frame->width, frame->height,
+                                     outW, outH,
+                                     /*quality=*/1,
+                                     /*pixelFormat=*/bridgePixFmt)) {
+            qWarning() << "FrameHandler: VSR init failed ("
+                       << initTimer.elapsed() << "ms):"
+                       << m_vsrClient->lastError();
+            m_vsrInitFailed = true;
+            return false;
+        }
+        qDebug() << "VSR-TIMING: initialize():" << initTimer.elapsed() << "ms"
+                 << "- output:" << outW << "x" << outH;
+    }
+
+    // Determine current output dimensions: must match what was used at init.
+    int outW, outH;
+    if (m_renderMode == VideoRenderMode::OpenGLTexture) {
+        outW = m_srcWidth;
+        outH = m_srcHeight;
+    } else {
+        const int dispW = m_displayWidth.load();
+        const int dispH = m_displayHeight.load();
+        outW = (dispW > m_srcWidth && dispH > m_srcHeight) ? dispW : m_srcWidth;
+        outH = (dispW > m_srcWidth && dispH > m_srcHeight) ? dispH : m_srcHeight;
+    }
+    const int outStride = outW * 4;
+    const size_t bufSize = static_cast<size_t>(outStride) * outH;
+
+    if (m_vsrOutBuffer.size() != bufSize)
+        m_vsrOutBuffer.resize(bufSize);
+
+    QElapsedTimer procTimer;
+    procTimer.start();
+    if (!m_vsrClient->processFrameToBgra(frame, m_vsrOutBuffer.data(),
+                                         outStride, outW, outH)) {
+        if (m_vsrFirstFrame) {
+            qWarning() << "FrameHandler: VSR process failed:"
+                       << m_vsrClient->lastError();
+        }
+        return false;
+    }
+    const qint64 procMs = procTimer.elapsed();
+
+    if (m_vsrFirstFrame) {
+        // Log timing + first 4 pixels for color channel diagnosis
+        qDebug() << "VSR-TIMING: first processFrameToBgra():" << procMs << "ms"
+                 << "total tryProcessVsr():" << totalTimer.elapsed() << "ms";
+
+        // Dump first 4 output pixels as hex [B,G,R,A] (if truly BGRA)
+        // so the user can verify channel order visually.
+        if (bufSize >= 16) {
+            const uint8_t *p = m_vsrOutBuffer.data();
+            qDebug().nospace()
+                << "VSR-DIAG: first 4 output pixels (byte order): "
+                << "px0=[" << p[0] << "," << p[1] << "," << p[2] << "," << p[3] << "] "
+                << "px1=[" << p[4] << "," << p[5] << "," << p[6] << "," << p[7] << "] "
+                << "px2=[" << p[8] << "," << p[9] << "," << p[10] << "," << p[11] << "] "
+                << "px3=[" << p[12] << "," << p[13] << "," << p[14] << "," << p[15] << "]";
+            qDebug() << "VSR-DIAG: if BGRA order -> pixel0 RGB ="
+                     << p[2] << p[1] << p[0]
+                     << "| if RGBA order -> pixel0 RGB ="
+                     << p[0] << p[1] << p[2];
+        }
+
+        m_vsrFirstFrame = false;
+    } else if (procMs > 50) {
+        // Log slow frames beyond the first
+        qDebug() << "VSR-TIMING: processFrameToBgra():" << procMs << "ms (slow)";
+    }
+
+    // Deliver the BGRA result to the active render path.
+    QElapsedTimer deliverTimer;
+    deliverTimer.start();
+
+    if (m_renderMode == VideoRenderMode::QVideoSink) {
+        // DLL outputs RGBA byte order despite the parameter name "outputBGRA".
+        QVideoFrameFormat fmt(QSize(outW, outH),
+                              QVideoFrameFormat::Format_RGBA8888);
+        QVideoFrame videoFrame(fmt);
+        if (!videoFrame.map(QVideoFrame::WriteOnly))
+            return false;
+
+        const int dstStride = videoFrame.bytesPerLine(0);
+        for (int y = 0; y < outH; ++y) {
+            memcpy(videoFrame.bits(0) + y * dstStride,
+                   m_vsrOutBuffer.data() + y * outStride,
+                   static_cast<size_t>(outW) * 4);
+        }
+        videoFrame.unmap();
+
+        std::lock_guard<std::mutex> lock(m_videoSinkMutex);
+        if (m_videoSink)
+            m_videoSink->setVideoFrame(videoFrame);
+    } else {
+        // OpenGL path: DLL outputs RGBA byte order.
+        // QImage::Format_RGBA8888 stores bytes as R,G,B,A — matches DLL output.
+        QImage img(m_vsrOutBuffer.data(), outW, outH, outStride,
+                   QImage::Format_RGBA8888);
+        emit videoFrameReady(img.copy());   // deep copy — buffer is reused
+    }
+
+    if (m_vsrFrameCount < 3) {
+        qDebug() << "VSR-TIMING: deliver:" << deliverTimer.elapsed() << "ms"
+                 << "| total frame:" << totalTimer.elapsed() << "ms";
+        ++m_vsrFrameCount;
+    }
+
+    return true;
+}
+
+void FrameHandler::resetVsrState()
+{
+    if (m_vsrClient)
+        m_vsrClient->shutdown();
+    m_vsrInitFailed = false;
+    m_vsrFirstFrame = true;
+    m_vsrFrameCount = 0;
+    m_vsrOutBuffer.clear();
 }
 
 void FrameHandler::setVideoSink(QVideoSink *sink)

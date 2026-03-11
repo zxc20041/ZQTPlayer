@@ -53,6 +53,7 @@ class PlayerWindowManager : public QObject
 
     // ── Config ──
     Q_PROPERTY(PlayerConfig* config READ config CONSTANT)
+    Q_PROPERTY(QSize displaySize READ displaySize WRITE setDisplaySize NOTIFY displaySizeChanged)
 
 public:
     explicit PlayerWindowManager(QObject *parent = nullptr);
@@ -93,6 +94,10 @@ public:
     // ── Config ──
     PlayerConfig *config() const;
 
+    // ── Display size ──
+    QSize displaySize() const;
+    void setDisplaySize(const QSize &size);
+
     // ── Property getters ──
     bool    hasMedia() const;
     QString filePath() const;
@@ -123,6 +128,7 @@ signals:
     void playingChanged();
     void positionChanged();
     void playbackFinished();
+    void displaySizeChanged();
 
 private slots:
     void onPositionTimer();
@@ -140,6 +146,7 @@ private:
     double         m_seekUiTarget = 0.0;
     qint64         m_seekUiExpireMs = 0;
     bool           m_tailToggleGuard = true;
+    QSize          m_displaySize;
 
     /// Async helper: runs AVCodecHandler::open() off the main thread
     void openMediaAsync(const QString &localPath);

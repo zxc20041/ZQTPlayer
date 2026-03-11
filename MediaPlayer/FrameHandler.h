@@ -6,6 +6,7 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <vector>
 
 #include "AVPlayerStatus.h"
 
@@ -71,6 +72,22 @@ public:
 
     /// Set the QVideoSink target (QVideoSink mode). Ownership stays with caller.
     void setVideoSink(QVideoSink *sink);
+
+    // ────────────────────────────────────────────────────────────
+    //  RTX VSR
+    // ────────────────────────────────────────────────────────────
+
+    /// Enable / disable RTX VSR processing at runtime.
+    void setVsrEnabled(bool enabled);
+    bool vsrEnabled() const;
+
+    /// Set the display viewport size (pixels). Used by VSR to decide
+    /// output dimensions. Thread-safe — called from the GUI thread.
+    void setDisplaySize(const QSize &size);
+
+    /// Pre-load the VSR bridge DLL (symbol resolution only, no GPU init).
+    /// Called once at startup to reduce first-frame latency.
+    void preloadVsr();
 
     // ────────────────────────────────────────────────────────
     //  Volume
@@ -158,6 +175,16 @@ private:
     std::atomic<double> m_audioClock{0.0};
     std::atomic<bool>   m_audioAbort{false};      ///< set by cleanupAudio() to unblock write loop
 
+    // ── RTX VSR ──
+    std::unique_ptr<class RtxVsrClient> m_vsrClient;
+    std::atomic<bool> m_vsrEnabled{false};
+    bool              m_vsrInitFailed  = false;
+    bool              m_vsrFirstFrame  = true;
+    int               m_vsrFrameCount  = 0;
+    std::vector<uint8_t> m_vsrOutBuffer;
+    std::atomic<int>  m_displayWidth{0};
+    std::atomic<int>  m_displayHeight{0};
+
     // Target audio format constants
     static constexpr int    kOutSampleRate = 44100;
     static constexpr int    kOutChannels   = 2;
@@ -167,4 +194,8 @@ private:
     bool createAudioSinkImpl();   ///< Must run on the main (GUI) thread
     static int  toSwsFlags(SwsFilterMode mode);
     static bool is10BitFormat(AVPixelFormat fmt);
+
+    // ── VSR ──
+    bool tryProcessVsr(AVFrame *frame);
+    void resetVsrState();
 };

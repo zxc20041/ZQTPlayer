@@ -36,6 +36,9 @@ class PlayerConfig : public QObject
     Q_PROPERTY(bool preferZeroCopy READ preferZeroCopy WRITE setPreferZeroCopy NOTIFY preferZeroCopyChanged)
     Q_PROPERTY(bool allowHwFallback READ allowHwFallback WRITE setAllowHwFallback NOTIFY allowHwFallbackChanged)
 
+    // ── RTX VSR (Windows only) ──
+    Q_PROPERTY(bool vsrEnabled READ vsrEnabled WRITE setVsrEnabled NOTIFY vsrEnabledChanged)
+
     // ── OpenGL presentation options ──
     Q_PROPERTY(bool videoFlipX READ videoFlipX WRITE setVideoFlipX NOTIFY videoFlipXChanged)
     Q_PROPERTY(bool videoFlipY READ videoFlipY WRITE setVideoFlipY NOTIFY videoFlipYChanged)
@@ -87,6 +90,10 @@ public:
     bool allowHwFallback() const;
     void setAllowHwFallback(bool enabled);
 
+    // ── RTX VSR ──
+    bool vsrEnabled() const;
+    void setVsrEnabled(bool enabled);
+
     bool videoFlipX() const;
     void setVideoFlipX(bool enabled);
 
@@ -108,6 +115,7 @@ signals:
     void videoFlipXChanged();
     void videoFlipYChanged();
     void lockAspectRatioChanged();
+    void vsrEnabledChanged();
 
 private:
     int              m_volume     = 80;
@@ -118,6 +126,7 @@ private:
     VideoDecodeBackend m_decodeBackend = VideoDecodeBackend::Software;
     bool             m_preferZeroCopy = true;
     bool             m_allowHwFallback = true;
+    bool             m_vsrEnabled = false;
     bool             m_videoFlipX = false;
     bool             m_videoFlipY = false;
     bool             m_lockAspectRatio = true;

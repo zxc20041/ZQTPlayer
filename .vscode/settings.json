@@ -3,6 +3,7 @@
   "cmake.buildDirectory": "${workspaceFolder}/build/vscode-${buildType}",
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/vscode-Debug/compile_commands.json",
   "chat.tools.terminal.autoApprove": {
-    "/home/zxc/Qt/Tools/CMake/bin/cmake": true
+    "/home/zxc/Qt/Tools/CMake/bin/cmake": true,
+    "C:/Qt/Tools/CMake_64/bin/cmake.exe": true
   }
 }

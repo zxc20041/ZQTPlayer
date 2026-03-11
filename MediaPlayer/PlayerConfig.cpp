@@ -19,6 +19,7 @@ PlayerConfig::PlayerConfig(QObject *parent)
     m_preferZeroCopy = true;
     settings.setValue("player/preferZeroCopy", true);
     m_allowHwFallback = settings.value("player/allowHwFallback", m_allowHwFallback).toBool();
+    m_vsrEnabled = settings.value("player/vsrEnabled", m_vsrEnabled).toBool();
     m_videoFlipX = settings.value("player/videoFlipX", m_videoFlipX).toBool();
     m_videoFlipY = settings.value("player/videoFlipY", m_videoFlipY).toBool();
     m_lockAspectRatio = settings.value("player/lockAspectRatio", m_lockAspectRatio).toBool();
@@ -209,4 +210,19 @@ void PlayerConfig::setLockAspectRatio(bool enabled)
     m_lockAspectRatio = enabled;
     QSettings().setValue("player/lockAspectRatio", m_lockAspectRatio);
     emit lockAspectRatioChanged();
+}
+
+// ── RTX VSR ─────────────────────────────────────────────────────────
+
+bool PlayerConfig::vsrEnabled() const
+{
+    return m_vsrEnabled;
+}
+
+void PlayerConfig::setVsrEnabled(bool enabled)
+{
+    if (m_vsrEnabled == enabled) return;
+    m_vsrEnabled = enabled;
+    QSettings().setValue("player/vsrEnabled", m_vsrEnabled);
+    emit vsrEnabledChanged();
 }

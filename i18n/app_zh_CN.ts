@@ -172,6 +172,18 @@
             <source>OpenGL Lock Aspect Ratio</source>
             <translation>OpenGL 锁定画面比例</translation>
         </message>
+        <message>
+            <source>Video Playback</source>
+            <translation>视频播放</translation>
+        </message>
+        <message>
+            <source>RTX Video Super Resolution</source>
+            <translation>RTX 视频超分辨率</translation>
+        </message>
+        <message>
+            <source> (Unsupported on this platform)</source>
+            <translation>（当前平台不支持）</translation>
+        </message>
     </context>
     <context>
         <name>MediaInfoDialog</name>

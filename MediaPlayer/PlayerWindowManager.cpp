@@ -25,6 +25,11 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
 
     m_frameHandler->setVideoRenderMode(m_config->renderMode());
     m_frameHandler->setSwsFilter(m_config->swsFilter());
+    m_frameHandler->setVsrEnabled(m_config->vsrEnabled());
+
+    // Pre-load the VSR bridge DLL so that the symbol resolution cost
+    // is paid at startup rather than on the first video frame.
+    m_frameHandler->preloadVsr();
 
     // Position timer: fires every 200 ms while playing to update UI
     m_positionTimer.setInterval(200);
@@ -52,6 +57,10 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
 
     connect(m_config, &PlayerConfig::allowHwFallbackChanged, this, [this]() {
         m_codec.setAllowHwFallback(m_config->allowHwFallback());
+    });
+
+    connect(m_config, &PlayerConfig::vsrEnabledChanged, this, [this]() {
+        m_frameHandler->setVsrEnabled(m_config->vsrEnabled());
     });
 
     connect(m_frameHandler, &FrameHandler::videoFrameReady, this, [this](const QImage &image) {
@@ -446,4 +455,19 @@ QString PlayerWindowManager::resolutionText() const
 PlayerConfig *PlayerWindowManager::config() const
 {
     return m_config;
+}
+
+QSize PlayerWindowManager::displaySize() const
+{
+    return m_displaySize;
+}
+
+void PlayerWindowManager::setDisplaySize(const QSize &size)
+{
+    if (m_displaySize == size) return;
+    m_displaySize = size;
+    m_frameHandler->setDisplaySize(size);
+    qDebug() << "PlayerWindowManager: display size changed to"
+             << size.width() << "x" << size.height();
+    emit displaySizeChanged();
 }

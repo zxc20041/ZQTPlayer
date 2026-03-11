@@ -34,6 +34,9 @@ Page {
         anchors.fill: parent
         fillMode: VideoOutput.PreserveAspectFit
         visible: playerManager.config.renderMode === 0
+
+        onWidthChanged:  updateDisplaySize()
+        onHeightChanged: updateDisplaySize()
     }
 
     OpenGLVideoItem {
@@ -43,6 +46,16 @@ Page {
         flipX: playerManager.config.videoFlipX
         flipY: playerManager.config.videoFlipY
         preserveAspectRatio: playerManager.config.lockAspectRatio
+
+        onWidthChanged:  updateDisplaySize()
+        onHeightChanged: updateDisplaySize()
+    }
+
+    function updateDisplaySize() {
+        var item = playerManager.config.renderMode === 1 ? openGLVideoItem : videoOutput
+        var w = Math.round(item.width)
+        var h = Math.round(item.height)
+        playerManager.displaySize = Qt.size(w, h)
     }
 
     // ── Drop area for opening files directly ──
@@ -352,5 +365,11 @@ Page {
         if (mediaSource !== "") {
             playerManager.openMedia(mediaSource);
         }
+    }
+
+    // Stop decode threads BEFORE QML destroys VideoOutput / OpenGLVideoItem,
+    // otherwise the video thread can write to an already-freed QVideoSink.
+    Component.onDestruction: {
+        playerManager.stop();
     }
 }
