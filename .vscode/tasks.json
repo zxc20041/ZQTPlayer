@@ -124,6 +124,24 @@
       "problemMatcher": ["$gcc"],
       "group": "build",
       "dependsOn": ["CMake: configure (Release)"]
+    },
+    {
+      "label": "Deploy (Release)",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", "${workspaceFolder}/scripts/deploy.ps1",
+        "-WorkspaceFolder", "${workspaceFolder}"
+      ],
+      "options": {
+        "env": {
+          "Path": "C:/Qt/6.10.2/mingw_64/bin;C:/Qt/Tools/mingw1310_64/bin;${env:Path}"
+        }
+      },
+      "problemMatcher": [],
+      "dependsOn": ["CMake: build (Release)"]
     }
   ]
 }
