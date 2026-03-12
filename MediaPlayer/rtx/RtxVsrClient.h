@@ -29,6 +29,11 @@ public:
     bool isLoaded() const;
     bool isInitialized() const;
 
+    int inWidth()  const { return m_inWidth; }
+    int inHeight() const { return m_inHeight; }
+    int outWidth()  const { return m_outWidth; }
+    int outHeight() const { return m_outHeight; }
+
     bool initialize(int inputWidth,
                     int inputHeight,
                     int outputWidth,
@@ -134,7 +139,9 @@ private:
 
     std::mutex m_mutex;   // guards m_handle access across threads
 
-    // Remembered output dimensions for the current init
+    // Remembered dimensions for the current init
+    int m_inWidth   = 0;
+    int m_inHeight  = 0;
     int m_outWidth  = 0;
     int m_outHeight = 0;
 };

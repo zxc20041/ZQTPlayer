@@ -89,6 +89,11 @@ public:
     /// Called once at startup to reduce first-frame latency.
     void preloadVsr();
 
+    /// Pre-initialize the VSR GPU context on a background thread.
+    /// Called when VSR is enabled so that the heavy D3D11 / NGX setup
+    /// is done before the first video frame arrives.
+    void warmUpVsr();
+
     // ────────────────────────────────────────────────────────
     //  Volume
     // ────────────────────────────────────────────────────────
@@ -198,4 +203,7 @@ private:
     // ── VSR ──
     bool tryProcessVsr(AVFrame *frame);
     void resetVsrState();
+    void shutdownVsr();        ///< full GPU teardown (disable / app exit)
+
+    QThread *m_vsrWarmupThread = nullptr;
 };

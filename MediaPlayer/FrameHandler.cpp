@@ -11,6 +11,7 @@
 #include <QThread>
 #include <QMetaObject>
 #include <QElapsedTimer>
+#include <cmath>
 
 #include "rtx/RtxVsrClient.h"
 
@@ -258,8 +259,14 @@ void FrameHandler::processVideoFrame(AVFrame *frame)
 void FrameHandler::setVsrEnabled(bool enabled)
 {
     const bool prev = m_vsrEnabled.exchange(enabled);
-    if (prev != enabled)
+    if (prev != enabled) {
         qDebug() << "FrameHandler: VSR" << (enabled ? "ENABLED" : "DISABLED");
+        if (enabled) {
+            warmUpVsr();   // pre-init GPU context in background
+        } else {
+            shutdownVsr(); // release GPU resources
+        }
+    }
 }
 
 bool FrameHandler::vsrEnabled() const
@@ -269,13 +276,10 @@ bool FrameHandler::vsrEnabled() const
 
 void FrameHandler::setDisplaySize(const QSize &size)
 {
-    const int oldW = m_displayWidth.exchange(size.width());
-    const int oldH = m_displayHeight.exchange(size.height());
-    // If display size changed while VSR is active, force re-init on next frame
-    if (m_vsrEnabled && m_vsrClient && m_vsrClient->isInitialized()
-        && (oldW != size.width() || oldH != size.height())) {
-        resetVsrState();
-    }
+    m_displayWidth.store(size.width());
+    m_displayHeight.store(size.height());
+    // Dimension change will be detected automatically in tryProcessVsr();
+    // no VSR teardown is needed.
 }
 
 void FrameHandler::preloadVsr()
@@ -295,55 +299,106 @@ void FrameHandler::preloadVsr()
 #endif
 }
 
+void FrameHandler::warmUpVsr()
+{
+#ifdef Q_OS_WIN
+    // If a previous warm-up thread is still running, skip.
+    if (m_vsrWarmupThread && m_vsrWarmupThread->isRunning())
+        return;
+    // Clean up finished thread
+    if (m_vsrWarmupThread) {
+        delete m_vsrWarmupThread;
+        m_vsrWarmupThread = nullptr;
+    }
+
+    if (!m_vsrClient)
+        preloadVsr();
+    if (!m_vsrClient || !m_vsrClient->isLoaded())
+        return;
+    if (m_vsrClient->isInitialized())
+        return;   // already warm
+
+    // Run the heavy D3D11 + NGX initialisation on a background thread
+    // so the GUI stays responsive.  RtxVsrClient::initialize() is
+    // mutex-protected, so concurrent calls from the decode thread are safe.
+    RtxVsrClient *client = m_vsrClient.get();
+    m_vsrWarmupThread = QThread::create([client]() {
+        qDebug() << "FrameHandler: warming up VSR (background)...";
+        QElapsedTimer t;
+        t.start();
+        // Use a common default resolution for pre-init.
+        if (client->initialize(1280, 720, 1920, 1080,
+                               /*quality=*/1, /*pixelFormat=*/0)) {
+            qDebug() << "FrameHandler: VSR warm-up done in" << t.elapsed() << "ms";
+        } else {
+            qDebug() << "FrameHandler: VSR warm-up failed:" << client->lastError();
+        }
+    });
+    m_vsrWarmupThread->start();
+#endif
+}
+
 bool FrameHandler::tryProcessVsr(AVFrame *frame)
 {
     QElapsedTimer totalTimer;
     totalTimer.start();
 
     if (!m_vsrClient) {
-        QElapsedTimer loadTimer;
-        loadTimer.start();
         m_vsrClient = std::make_unique<RtxVsrClient>();
-        qDebug() << "VSR-TIMING: RtxVsrClient ctor:" << loadTimer.elapsed() << "ms";
+        if (!m_vsrClient->load()) {
+            qWarning() << "FrameHandler: VSR bridge DLL load failed:"
+                       << m_vsrClient->lastError();
+            m_vsrInitFailed = true;
+            return false;
+        }
     }
 
-    if (!m_vsrClient->isInitialized()) {
-        // Determine output dimensions.
-        // In OpenGL mode the renderer handles aspect-ratio letterboxing itself
-        // via vertex scaling, so VSR should always output at source resolution —
-        // upscaling to display size would make the texture match the viewport
-        // exactly, defeating preserveAspectRatio.
-        // In QVideoSink mode, upscale to display size for true super-resolution.
-        int outW = frame->width;
-        int outH = frame->height;
+    // ── Compute desired output dimensions ──
+    // OpenGL mode: always source size (renderer handles letterboxing).
+    // QVideoSink:  upscale to fit display area, preserving aspect ratio.
+    int outW = frame->width;
+    int outH = frame->height;
+
+    if (m_renderMode == VideoRenderMode::QVideoSink) {
         const int dispW = m_displayWidth.load();
         const int dispH = m_displayHeight.load();
+        if (dispW > 0 && dispH > 0) {
+            const double srcAspect  = static_cast<double>(frame->width) / frame->height;
+            const double dispAspect = static_cast<double>(dispW) / dispH;
 
-        if (m_renderMode == VideoRenderMode::OpenGLTexture) {
-            // OpenGL: always output at source size; the GPU letterboxes.
-            qDebug() << "FrameHandler: VSR (OpenGL) - source size:"
-                     << frame->width << "x" << frame->height
-                     << "(display:" << dispW << "x" << dispH << ")";
-        } else {
-            // QVideoSink: upscale when display > source
-            if (dispW > frame->width && dispH > frame->height) {
-                outW = dispW;
-                outH = dispH;
-                qDebug() << "FrameHandler: VSR super-resolution mode - src:"
-                         << frame->width << "x" << frame->height
-                         << "-> display:" << outW << "x" << outH;
+            int fitW, fitH;
+            if (srcAspect > dispAspect) {
+                fitW = dispW;
+                fitH = static_cast<int>(std::round(dispW / srcAspect));
             } else {
-                qDebug() << "FrameHandler: VSR enhancement mode (display"
-                         << dispW << "x" << dispH
-                         << "<= src" << frame->width << "x" << frame->height << ")";
+                fitH = dispH;
+                fitW = static_cast<int>(std::round(dispH * srcAspect));
+            }
+            // Ensure even dimensions (codec / GPU requirement)
+            fitW = (fitW + 1) & ~1;
+            fitH = (fitH + 1) & ~1;
+
+            // Only upscale if the fitted size >= source in both dimensions
+            if (fitW >= frame->width && fitH >= frame->height) {
+                outW = fitW;
+                outH = fitH;
             }
         }
+    }
 
-        // Map FFmpeg pixel format → bridge DLL RtxPixelFormat enum
+    // ── (Re-)initialize if dimensions changed or not yet initialised ──
+    const bool needInit = !m_vsrClient->isInitialized()
+                          || m_vsrClient->inWidth()  != frame->width
+                          || m_vsrClient->inHeight() != frame->height
+                          || m_vsrClient->outWidth()  != outW
+                          || m_vsrClient->outHeight() != outH;
+
+    if (needInit) {
         const AVPixelFormat ffFmt = static_cast<AVPixelFormat>(frame->format);
         const int bridgePixFmt = (ffFmt == AV_PIX_FMT_P010LE) ? 1 /*P010*/ : 0 /*NV12*/;
+        const bool isReset = m_vsrClient->isInitialized();
 
-        qDebug() << "FrameHandler: VSR attempting init -"
+        qDebug() << "FrameHandler: VSR" << (isReset ? "reset" : "init")
                  << frame->width << "x" << frame->height
                  << "->" << outW << "x" << outH
                  << "fmt:" << av_get_pix_fmt_name(ffFmt);
@@ -360,21 +415,19 @@ bool FrameHandler::tryProcessVsr(AVFrame *frame)
             m_vsrInitFailed = true;
             return false;
         }
-        qDebug() << "VSR-TIMING: initialize():" << initTimer.elapsed() << "ms"
+        qDebug() << "VSR-TIMING:" << (isReset ? "reset" : "initialize") << ":"
+                 << initTimer.elapsed() << "ms"
                  << "- output:" << outW << "x" << outH;
+
+        // Reset per-session diagnostics on each init/reset
+        m_vsrFirstFrame = true;
+        m_vsrFrameCount = 0;
     }
 
-    // Determine current output dimensions: must match what was used at init.
-    int outW, outH;
-    if (m_renderMode == VideoRenderMode::OpenGLTexture) {
-        outW = m_srcWidth;
-        outH = m_srcHeight;
-    } else {
-        const int dispW = m_displayWidth.load();
-        const int dispH = m_displayHeight.load();
-        outW = (dispW > m_srcWidth && dispH > m_srcHeight) ? dispW : m_srcWidth;
-        outH = (dispW > m_srcWidth && dispH > m_srcHeight) ? dispH : m_srcHeight;
-    }
+    // ── Process frame ──
+    // Use the dimensions the client was actually initialised with.
+    outW = m_vsrClient->outWidth();
+    outH = m_vsrClient->outHeight();
     const int outStride = outW * 4;
     const size_t bufSize = static_cast<size_t>(outStride) * outH;
 
@@ -394,12 +447,9 @@ bool FrameHandler::tryProcessVsr(AVFrame *frame)
     const qint64 procMs = procTimer.elapsed();
 
     if (m_vsrFirstFrame) {
-        // Log timing + first 4 pixels for color channel diagnosis
         qDebug() << "VSR-TIMING: first processFrameToBgra():" << procMs << "ms"
                  << "total tryProcessVsr():" << totalTimer.elapsed() << "ms";
 
-        // Dump first 4 output pixels as hex [B,G,R,A] (if truly BGRA)
-        // so the user can verify channel order visually.
         if (bufSize >= 16) {
             const uint8_t *p = m_vsrOutBuffer.data();
             qDebug().nospace()
@@ -416,16 +466,14 @@ bool FrameHandler::tryProcessVsr(AVFrame *frame)
 
         m_vsrFirstFrame = false;
     } else if (procMs > 50) {
-        // Log slow frames beyond the first
         qDebug() << "VSR-TIMING: processFrameToBgra():" << procMs << "ms (slow)";
     }
 
-    // Deliver the BGRA result to the active render path.
+    // ── Deliver ──
     QElapsedTimer deliverTimer;
     deliverTimer.start();
 
     if (m_renderMode == VideoRenderMode::QVideoSink) {
-        // DLL outputs RGBA byte order despite the parameter name "outputBGRA".
         QVideoFrameFormat fmt(QSize(outW, outH),
                               QVideoFrameFormat::Format_RGBA8888);
         QVideoFrame videoFrame(fmt);
@@ -444,11 +492,9 @@ bool FrameHandler::tryProcessVsr(AVFrame *frame)
         if (m_videoSink)
             m_videoSink->setVideoFrame(videoFrame);
     } else {
-        // OpenGL path: DLL outputs RGBA byte order.
-        // QImage::Format_RGBA8888 stores bytes as R,G,B,A — matches DLL output.
         QImage img(m_vsrOutBuffer.data(), outW, outH, outStride,
                    QImage::Format_RGBA8888);
-        emit videoFrameReady(img.copy());   // deep copy — buffer is reused
+        emit videoFrameReady(img.copy());
     }
 
     if (m_vsrFrameCount < 3) {
@@ -462,12 +508,26 @@ bool FrameHandler::tryProcessVsr(AVFrame *frame)
 
 void FrameHandler::resetVsrState()
 {
-    if (m_vsrClient)
-        m_vsrClient->shutdown();
+    // Only clear per-session tracking state.
+    // The VSR GPU handle is kept alive — the next tryProcessVsr() call
+    // will re-configure it via the fast m_fnReset path if needed.
     m_vsrInitFailed = false;
     m_vsrFirstFrame = true;
     m_vsrFrameCount = 0;
     m_vsrOutBuffer.clear();
+}
+
+void FrameHandler::shutdownVsr()
+{
+    // Wait for any background warm-up to finish first.
+    if (m_vsrWarmupThread) {
+        m_vsrWarmupThread->wait();
+        delete m_vsrWarmupThread;
+        m_vsrWarmupThread = nullptr;
+    }
+    if (m_vsrClient)
+        m_vsrClient->shutdown();
+    resetVsrState();
 }
 
 void FrameHandler::setVideoSink(QVideoSink *sink)
@@ -706,6 +766,7 @@ void FrameHandler::cleanup()
 {
     cleanupAudio();
     cleanupVideo();
+    shutdownVsr();   // full GPU teardown on app exit
 }
 
 // ════════════════════════════════════════════════════════════

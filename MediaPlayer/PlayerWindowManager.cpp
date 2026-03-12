@@ -31,6 +31,11 @@ PlayerWindowManager::PlayerWindowManager(QObject *parent)
     // is paid at startup rather than on the first video frame.
     m_frameHandler->preloadVsr();
 
+    // If VSR is already enabled, start the heavy GPU warm-up now so
+    // that the first video frame does not incur an ~8 s penalty.
+    if (m_config->vsrEnabled())
+        m_frameHandler->warmUpVsr();
+
     // Position timer: fires every 200 ms while playing to update UI
     m_positionTimer.setInterval(200);
     connect(&m_positionTimer, &QTimer::timeout, this, &PlayerWindowManager::onPositionTimer);

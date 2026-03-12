@@ -132,9 +132,14 @@ bool RtxVsrClient::initialize(int inputWidth,
             return false;
         }
 
+        m_inWidth   = inputWidth;
+        m_inHeight  = inputHeight;
         m_outWidth  = outputWidth;
         m_outHeight = outputHeight;
         m_initialized = true;
+        qDebug() << "FrameHandler: VSR reset successful:"
+                 << inputWidth << "x" << inputHeight
+                 << "->" << outputWidth << "x" << outputHeight;
         return true;
     }
 
@@ -152,9 +157,14 @@ bool RtxVsrClient::initialize(int inputWidth,
     }
 
     m_handle    = handle;
+    m_inWidth   = inputWidth;
+    m_inHeight  = inputHeight;
     m_outWidth  = outputWidth;
     m_outHeight = outputHeight;
     m_initialized = true;
+    qDebug() << "FrameHandler: VSR initialized successfully:"
+             << inputWidth << "x" << inputHeight
+             << "->" << outputWidth << "x" << outputHeight;
     return true;
 }
 
@@ -166,8 +176,11 @@ void RtxVsrClient::shutdown()
     }
     m_handle      = nullptr;
     m_initialized = false;
+    m_inWidth     = 0;
+    m_inHeight    = 0;
     m_outWidth    = 0;
     m_outHeight   = 0;
+    qDebug() << "FrameHandler: VSR shutdown complete";
 }
 
 bool RtxVsrClient::setQuality(int quality)
